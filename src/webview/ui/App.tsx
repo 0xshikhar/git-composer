@@ -15,7 +15,9 @@ function acquireVsCodeApi(): any {
 }
 
 export default function App() {
+    const [provider, setProvider] = useState('openai');
     const [apiKey, setApiKey] = useState('');
+    const [model, setModel] = useState('');
     const [loading, setLoading] = useState(false);
     const [stagedFiles, setStagedFiles] = useState<any[]>([]);
     const [groups, setGroups] = useState<any[]>([]);
@@ -59,9 +61,9 @@ export default function App() {
         vscode.postMessage({
             command: 'generate',
             providerConfig: {
-                provider: 'openai',
+                provider: provider,
                 apiKey,
-                model: 'gpt-4-turbo-preview'
+                model: model
             }
         });
     };
@@ -78,13 +80,30 @@ export default function App() {
             <h1>Git Commit Composer</h1>
 
             <div className="card">
-                <label>OpenAI API Key:</label>
+                <label>AI Provider:</label>
+                <select className="input" value={provider} onChange={e => setProvider(e.target.value)}>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="google">Google Gemini</option>
+                    <option value="groq">Groq</option>
+                </select>
+
+                <label>API Key:</label>
                 <input
                     type="password"
                     className="input"
                     value={apiKey}
                     onChange={e => setApiKey(e.target.value)}
-                    placeholder="sk-..."
+                    placeholder="Enter API Key"
+                />
+
+                <label>Model (Optional):</label>
+                <input
+                    type="text"
+                    className="input"
+                    value={model}
+                    onChange={e => setModel(e.target.value)}
+                    placeholder="e.g. gpt-4, claude-3, gemini-pro"
                 />
             </div>
 
