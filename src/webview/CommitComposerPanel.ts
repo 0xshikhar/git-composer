@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
 import { GitService } from '../git/gitService';
+import { AIProviderFactory } from '../ai/aiProviderFactory';
 import { AIProvider } from '../ai/aiProvider';
-import { OpenAIProvider } from '../ai/providers/openai';
-import { AnthropicProvider } from '../ai/providers/anthropic';
 import { CommitGroup } from '../types/commits';
 import { FileChange } from '../types/git';
 
@@ -145,13 +144,11 @@ export class CommitComposerPanel {
 
     private async handleGenerate(config: any) {
         try {
-            // Initialize provider based on config
-            // For now hardcoded or simple switch
-            if (config.provider === 'anthropic') {
-                this.aiProvider = new AnthropicProvider({ apiKey: config.apiKey, model: config.model });
-            } else {
-                this.aiProvider = new OpenAIProvider({ apiKey: config.apiKey, model: config.model });
-            }
+            // Use factory to create provider
+            this.aiProvider = AIProviderFactory.create(config.provider, {
+                apiKey: config.apiKey,
+                model: config.model
+            });
 
             const changes = await this.gitService.getStagedChanges();
             if (changes.length === 0) {
