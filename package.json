@@ -27,7 +27,7 @@
             "openai",
             "anthropic",
             "google",
-            "ollama"
+            "groq"
           ],
           "default": "openai",
           "description": "AI Provider to use for generating commits"
