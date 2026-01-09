@@ -2,7 +2,14 @@
   "name": "vscode-commit-composer",
   "displayName": "Git Commit Composer",
   "description": "Intelligently group staged changes into logical commits using AI",
+  "publisher": "0xshikhar",
+  "publisherName": "0xshikhar",
+  "publisherWebsite": "https://shikhar.xyz",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/0xshikhar/git-composer.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
