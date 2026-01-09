@@ -1,7 +1,7 @@
 # Git Commit Composer
 
-[![Version](https://vsmarketplacebadges.dev/version/undefined_publisher.vscode-commit-composer.svg)](https://marketplace.visualstudio.com/items?itemName=undefined_publisher.vscode-commit-composer)
-[![Installs](https://vsmarketplacebadges.dev/installs/undefined_publisher.vscode-commit-composer.svg)](https://marketplace.visualstudio.com/items?itemName=undefined_publisher.vscode-commit-composer)
+[![Version](https://vsmarketplacebadges.dev/version/undefined_publisher.vscode-commit-composer.png)](https://marketplace.visualstudio.com/items?itemName=undefined_publisher.vscode-commit-composer)
+[![Installs](https://vsmarketplacebadges.dev/installs/undefined_publisher.vscode-commit-composer.png)](https://marketplace.visualstudio.com/items?itemName=undefined_publisher.vscode-commit-composer)
 
 **Git Commit Composer** is a VS Code extension that intelligently groups your staged changes into logical commits using AI. Say goodbye to massive, unstructured commits and let AI help you organize your work.
 
