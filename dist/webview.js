@@ -47570,7 +47570,9 @@ function acquireVsCodeApi() {
     };
 }
 function App() {
+    const [provider, setProvider] = (0, react_1.useState)('openai');
     const [apiKey, setApiKey] = (0, react_1.useState)('');
+    const [model, setModel] = (0, react_1.useState)('');
     const [loading, setLoading] = (0, react_1.useState)(false);
     const [stagedFiles, setStagedFiles] = (0, react_1.useState)([]);
     const [groups, setGroups] = (0, react_1.useState)([]);
@@ -47609,9 +47611,9 @@ function App() {
         vscode.postMessage({
             command: 'generate',
             providerConfig: {
-                provider: 'openai',
+                provider: provider,
                 apiKey,
-                model: 'gpt-4-turbo-preview'
+                model: model
             }
         });
     };
@@ -47624,8 +47626,16 @@ function App() {
     return (react_1.default.createElement("div", { className: "container" },
         react_1.default.createElement("h1", null, "Git Commit Composer"),
         react_1.default.createElement("div", { className: "card" },
-            react_1.default.createElement("label", null, "OpenAI API Key:"),
-            react_1.default.createElement("input", { type: "password", className: "input", value: apiKey, onChange: e => setApiKey(e.target.value), placeholder: "sk-..." })),
+            react_1.default.createElement("label", null, "AI Provider:"),
+            react_1.default.createElement("select", { className: "input", value: provider, onChange: e => setProvider(e.target.value) },
+                react_1.default.createElement("option", { value: "openai" }, "OpenAI"),
+                react_1.default.createElement("option", { value: "anthropic" }, "Anthropic"),
+                react_1.default.createElement("option", { value: "google" }, "Google Gemini"),
+                react_1.default.createElement("option", { value: "groq" }, "Groq")),
+            react_1.default.createElement("label", null, "API Key:"),
+            react_1.default.createElement("input", { type: "password", className: "input", value: apiKey, onChange: e => setApiKey(e.target.value), placeholder: "Enter API Key" }),
+            react_1.default.createElement("label", null, "Model (Optional):"),
+            react_1.default.createElement("input", { type: "text", className: "input", value: model, onChange: e => setModel(e.target.value), placeholder: "e.g. gpt-4, claude-3, gemini-pro" })),
         react_1.default.createElement("div", { className: "card" },
             react_1.default.createElement("h3", null,
                 "Staged Files (",
