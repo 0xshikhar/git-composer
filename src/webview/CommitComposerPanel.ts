@@ -95,6 +95,7 @@ export class CommitComposerPanel {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${this._panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
                 <title>Commit Composer</title>
                 <!-- <link href="${styleMainUri}" rel="stylesheet"> --> 
                 <!-- Style loader usually injects styles, but if we used MiniCssExtractPlugin we'd need a link. 
