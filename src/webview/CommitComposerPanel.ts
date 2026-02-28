@@ -4,6 +4,7 @@ import { AIProviderFactory } from '../ai/aiProviderFactory';
 import { AIProvider } from '../ai/aiProvider';
 import { CommitGroup } from '../types/commits';
 import { FileChange } from '../types/git';
+import { Logger } from '../utils/logger';
 
 export class CommitComposerPanel {
     public static currentPanel: CommitComposerPanel | undefined;
@@ -22,6 +23,8 @@ export class CommitComposerPanel {
         this._extensionUri = extensionUri;
         this.gitService = gitService;
 
+        Logger.info('CommitComposerPanel: Panel created');
+
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
         this._panel.webview.html = this._getHtmlForWebview();
         this._setWebviewMessageListener();
@@ -36,10 +39,12 @@ export class CommitComposerPanel {
             : undefined;
 
         if (CommitComposerPanel.currentPanel) {
+            Logger.info('CommitComposerPanel: Revealing existing panel');
             CommitComposerPanel.currentPanel._panel.reveal(column);
             return;
         }
 
+        Logger.info('CommitComposerPanel: Creating new panel');
         const panel = vscode.window.createWebviewPanel(
             'commitComposer',
             'Commit Composer',
@@ -62,10 +67,12 @@ export class CommitComposerPanel {
     }
 
     public static revive(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, gitService: GitService) {
+        Logger.info('CommitComposerPanel: Reviving panel');
         CommitComposerPanel.currentPanel = new CommitComposerPanel(panel, extensionUri, gitService);
     }
 
     public dispose() {
+        Logger.info('CommitComposerPanel: Disposing panel');
         CommitComposerPanel.currentPanel = undefined;
 
         this._panel.dispose();
@@ -111,6 +118,8 @@ export class CommitComposerPanel {
     private _setWebviewMessageListener() {
         this._panel.webview.onDidReceiveMessage(
             async (message) => {
+                Logger.debug('CommitComposerPanel: Received message from webview', { command: message.command });
+
                 switch (message.command) { // Using 'command' instead of 'type' to be consistent if needed, but 'type' is fine.
                     case 'loadData':
                         await this.loadChanges();
@@ -130,12 +139,16 @@ export class CommitComposerPanel {
 
     private async loadChanges() {
         try {
+            Logger.info('CommitComposerPanel: Loading staged changes');
             const staged = await this.gitService.getStagedChanges();
+            Logger.info('CommitComposerPanel: Staged changes loaded', { count: staged.length });
+
             this._panel.webview.postMessage({
                 command: 'dataLoaded',
                 data: { staged }
             });
         } catch (e) {
+            Logger.error('CommitComposerPanel: Failed to load changes', e);
             this._panel.webview.postMessage({
                 command: 'error',
                 message: (e as Error).message
@@ -145,6 +158,11 @@ export class CommitComposerPanel {
 
     private async handleGenerate(config: any) {
         try {
+            Logger.info('CommitComposerPanel: Generating commits', {
+                provider: config.provider,
+                model: config.model
+            });
+
             // Use factory to create provider
             this.aiProvider = AIProviderFactory.create(config.provider, {
                 apiKey: config.apiKey,
@@ -153,16 +171,21 @@ export class CommitComposerPanel {
 
             const changes = await this.gitService.getStagedChanges();
             if (changes.length === 0) {
+                Logger.warn('CommitComposerPanel: No staged changes to analyze');
                 throw new Error('No staged changes to analyze');
             }
 
+            Logger.info('CommitComposerPanel: Analyzing changes with AI', { fileCount: changes.length });
             const result = await this.aiProvider.analyzeChanges(changes);
+            Logger.info('CommitComposerPanel: AI analysis complete', { groupCount: result.groups.length });
+
             this._panel.webview.postMessage({
                 command: 'generated',
                 groups: result.groups
             });
 
         } catch (e) {
+            Logger.error('CommitComposerPanel: Failed to generate commits', e);
             this._panel.webview.postMessage({
                 command: 'error',
                 message: (e as Error).message
@@ -172,11 +195,19 @@ export class CommitComposerPanel {
 
     private async handleCommit(group: CommitGroup) {
         try {
+            Logger.info('CommitComposerPanel: Creating commit', {
+                message: group.message,
+                fileCount: group.files.length
+            });
+
             const files = group.files.map(f => f.path);
             await this.gitService.createCommit(group.message, files);
+
+            Logger.info('CommitComposerPanel: Commit created successfully');
             vscode.window.showInformationMessage(`Committed: ${group.message}`);
             await this.loadChanges(); // Refresh
         } catch (e) {
+            Logger.error('CommitComposerPanel: Failed to create commit', e);
             vscode.window.showErrorMessage(`Commit failed: ${(e as Error).message}`);
         }
     }
