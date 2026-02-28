@@ -51,6 +51,16 @@ export default function App() {
         return () => window.removeEventListener('message', handler);
     }, []);
 
+    useEffect(() => {
+        if (provider === 'openai') {
+            setModel('gpt-5-mini');
+        } else if (provider === 'google') {
+            setModel('gemini-2.5-flash');
+        } else {
+            setModel('');
+        }
+    }, [provider]);
+
     const handleGenerate = () => {
         if (!apiKey) {
             setError('Please enter an OpenAI API Key');
@@ -98,13 +108,51 @@ export default function App() {
                 />
 
                 <label>Model (Optional):</label>
-                <input
-                    type="text"
-                    className="input"
-                    value={model}
-                    onChange={e => setModel(e.target.value)}
-                    placeholder="e.g. gpt-4, claude-3, gemini-pro"
-                />
+                {['openai', 'google'].includes(provider) ? (
+                    <select
+                        className="input"
+                        value={model}
+                        onChange={e => setModel(e.target.value)}
+                    >
+                        {provider === 'openai' && (
+                            <>
+                                <option value="gpt-5.2">GPT-5.2</option>
+                                <option value="gpt-5.1">GPT-5.1</option>
+                                <option value="gpt-5">GPT-5</option>
+                                <option value="gpt-5-mini">GPT-5 mini (Recommended)</option>
+                                <option value="gpt-5-nano">GPT-5 nano</option>
+                                <option value="gpt-4.1">GPT-4.1</option>
+                                <option value="o4-mini">o4 mini</option>
+                                <option value="o3">o3</option>
+                                <option value="o3-pro">o3 Pro</option>
+                                <option value="o3-mini">o3 mini</option>
+                                <option value="gpt-4o">GPT-4o</option>
+                            </>
+                        )}
+                        {provider === 'google' && (
+                            <>
+                                <option value="gemini-3.0-pro-preview">Gemini 3 Pro (Preview)</option>
+                                <option value="gemini-3.0-flash-preview">Gemini 3 Flash (Preview)</option>
+                                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
+                                <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
+                                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash-Lite</option>
+                                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                                <option value="gemini-1.5-flash-8b">Gemini 1.5 Flash 8B</option>
+                            </>
+                        )}
+                    </select>
+                ) : (
+                    <input
+                        type="text"
+                        className="input"
+                        value={model}
+                        onChange={e => setModel(e.target.value)}
+                        placeholder="e.g. claude-3, llama3-70b"
+                    />
+                )}
             </div>
 
             <div className="card">
