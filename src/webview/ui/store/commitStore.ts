@@ -1,0 +1,203 @@
+import { create } from 'zustand';
+
+// Types duplicated for webview context (no vscode imports)
+export interface FileChange {
+    path: string;
+    changeType: string;
+    diff: string;
+    additions: number;
+    deletions: number;
+}
+
+export type CommitState = 'draft' | 'generated' | 'edited' | 'confirmed' | 'committed';
+
+export interface DraftCommit {
+    id: string;
+    message: string;
+    description?: string;
+    files: FileChange[];
+    state: CommitState;
+    confidence: number;
+    type?: string;
+    scope?: string;
+}
+
+export interface ProviderConfig {
+    provider: string;
+    apiKey: string;
+    model: string;
+    baseUrl?: string;
+}
+
+interface CommitStoreState {
+    // Data
+    stagedFiles: FileChange[];
+    drafts: DraftCommit[];
+    reasoning: string | null;
+
+    // UI state
+    selectedDraftId: string | null;
+    selectedFilePath: string | null;
+    isLoading: boolean;
+    isCommitting: boolean;
+    error: string | null;
+    commitProgress: { current: number; total: number } | null;
+
+    // Provider config
+    providerConfig: ProviderConfig;
+
+    // View mode
+    activeView: 'tree' | 'diff' | 'editor';
+
+    // Actions
+    setStagedFiles: (files: FileChange[]) => void;
+    setDrafts: (drafts: DraftCommit[], reasoning?: string | null) => void;
+    selectDraft: (id: string | null) => void;
+    selectFile: (path: string | null) => void;
+    setLoading: (loading: boolean) => void;
+    setCommitting: (committing: boolean) => void;
+    setError: (error: string | null) => void;
+    setCommitProgress: (progress: { current: number; total: number } | null) => void;
+    setProviderConfig: (config: Partial<ProviderConfig>) => void;
+    setActiveView: (view: 'tree' | 'diff' | 'editor') => void;
+
+    // Draft manipulation
+    updateDraftMessage: (id: string, message: string) => void;
+    removeDraft: (id: string) => void;
+    mergeDrafts: (ids: string[]) => void;
+    splitDraft: (id: string, filePaths: string[][]) => void;
+    reorderDrafts: (fromIndex: number, toIndex: number) => void;
+    confirmDraft: (id: string) => void;
+    markCommitted: (id: string) => void;
+
+    // Reset
+    reset: () => void;
+}
+
+const generateId = () => Math.random().toString(36).substring(2, 10);
+
+export const useCommitStore = create<CommitStoreState>((set, get) => ({
+    // Initial state
+    stagedFiles: [],
+    drafts: [],
+    reasoning: null,
+    selectedDraftId: null,
+    selectedFilePath: null,
+    isLoading: false,
+    isCommitting: false,
+    error: null,
+    commitProgress: null,
+    providerConfig: {
+        provider: 'openai',
+        apiKey: '',
+        model: '',
+    },
+    activeView: 'tree',
+
+    // Setters
+    setStagedFiles: (files) => set({ stagedFiles: files }),
+    setDrafts: (drafts, reasoning = null) => set({ drafts, reasoning, error: null }),
+    selectDraft: (id) => set({ selectedDraftId: id }),
+    selectFile: (path) => set({ selectedFilePath: path, activeView: 'diff' }),
+    setLoading: (loading) => set({ isLoading: loading }),
+    setCommitting: (committing) => set({ isCommitting: committing }),
+    setError: (error) => set({ error }),
+    setCommitProgress: (progress) => set({ commitProgress: progress }),
+    setProviderConfig: (config) =>
+        set((state) => ({
+            providerConfig: { ...state.providerConfig, ...config },
+        })),
+    setActiveView: (view) => set({ activeView: view }),
+
+    // Draft manipulation
+    updateDraftMessage: (id, message) =>
+        set((state) => ({
+            drafts: state.drafts.map((d) =>
+                d.id === id ? { ...d, message, state: 'edited' as CommitState } : d
+            ),
+        })),
+
+    removeDraft: (id) =>
+        set((state) => ({
+            drafts: state.drafts.filter((d) => d.id !== id),
+            selectedDraftId: state.selectedDraftId === id ? null : state.selectedDraftId,
+        })),
+
+    mergeDrafts: (ids) =>
+        set((state) => {
+            if (ids.length < 2) return state;
+            const toMerge = state.drafts.filter((d) => ids.includes(d.id));
+            if (toMerge.length < 2) return state;
+
+            const merged: DraftCommit = {
+                id: generateId(),
+                message: toMerge.map((d) => d.message).join('\n\n'),
+                files: toMerge.flatMap((d) => d.files),
+                state: 'edited',
+                confidence: Math.min(...toMerge.map((d) => d.confidence)),
+            };
+
+            const remaining = state.drafts.filter((d) => !ids.includes(d.id));
+            // Insert merged at the position of the first removed
+            const firstIdx = state.drafts.findIndex((d) => ids.includes(d.id));
+            remaining.splice(firstIdx, 0, merged);
+
+            return { drafts: remaining, selectedDraftId: merged.id };
+        }),
+
+    splitDraft: (id, filePaths) =>
+        set((state) => {
+            const draft = state.drafts.find((d) => d.id === id);
+            if (!draft || filePaths.length < 2) return state;
+
+            const newDrafts: DraftCommit[] = filePaths.map((paths, i) => ({
+                id: generateId(),
+                message: `${draft.message} (part ${i + 1})`,
+                files: draft.files.filter((f) => paths.includes(f.path)),
+                state: 'edited' as CommitState,
+                confidence: draft.confidence,
+            }));
+
+            const idx = state.drafts.findIndex((d) => d.id === id);
+            const result = [...state.drafts];
+            result.splice(idx, 1, ...newDrafts);
+
+            return { drafts: result };
+        }),
+
+    reorderDrafts: (fromIndex, toIndex) =>
+        set((state) => {
+            const newDrafts = [...state.drafts];
+            const [moved] = newDrafts.splice(fromIndex, 1);
+            newDrafts.splice(toIndex, 0, moved);
+            return { drafts: newDrafts };
+        }),
+
+    confirmDraft: (id) =>
+        set((state) => ({
+            drafts: state.drafts.map((d) =>
+                d.id === id ? { ...d, state: 'confirmed' as CommitState } : d
+            ),
+        })),
+
+    markCommitted: (id) =>
+        set((state) => ({
+            drafts: state.drafts.map((d) =>
+                d.id === id ? { ...d, state: 'committed' as CommitState } : d
+            ),
+        })),
+
+    reset: () =>
+        set({
+            stagedFiles: [],
+            drafts: [],
+            reasoning: null,
+            selectedDraftId: null,
+            selectedFilePath: null,
+            isLoading: false,
+            isCommitting: false,
+            error: null,
+            commitProgress: null,
+            activeView: 'tree',
+        }),
+}));
