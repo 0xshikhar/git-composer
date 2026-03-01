@@ -1,30 +1,27 @@
 import * as vscode from 'vscode';
-import { GitService } from '../git/gitService';
-import { AIProviderFactory } from '../ai/aiProviderFactory';
-import { AIProvider } from '../ai/aiProvider';
-import { CommitGroup } from '../types/commits';
-import { FileChange } from '../types/git';
+import { GitService } from '../core/git/gitService';
+import { Orchestrator } from '../core/orchestrator';
+import { CommitExecutor } from '../core/commitExecutor';
+import { DraftCommit } from '../types/commits';
 import { Logger } from '../utils/logger';
 
 export class CommitComposerProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'commitComposer.sidebarView';
     private _view?: vscode.WebviewView;
     private _extensionUri: vscode.Uri;
-    private gitService: GitService;
-    private aiProvider: AIProvider | undefined;
+    private orchestrator: Orchestrator;
+    private commitExecutor: CommitExecutor;
 
-    constructor(
-        extensionUri: vscode.Uri,
-        gitService: GitService
-    ) {
+    constructor(extensionUri: vscode.Uri, gitService: GitService) {
         this._extensionUri = extensionUri;
-        this.gitService = gitService;
+        this.orchestrator = new Orchestrator(gitService);
+        this.commitExecutor = new CommitExecutor(gitService);
         Logger.info('CommitComposerProvider: Initialized');
     }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
-        context: vscode.WebviewViewResolveContext,
+        _context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken,
     ) {
         this._view = webviewView;
@@ -48,7 +45,6 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
         const scriptUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js')
         );
-
         const nonce = getNonce();
 
         return `<!DOCTYPE html>
@@ -56,7 +52,7 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
                 <title>Git Composer</title>
             </head>
             <body>
@@ -67,32 +63,37 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
     }
 
     private _setWebviewMessageListener(webview: vscode.Webview) {
-        webview.onDidReceiveMessage(
-            async (message) => {
-                Logger.debug('CommitComposerProvider: Received message from webview', { command: message.command });
+        webview.onDidReceiveMessage(async (message) => {
+            Logger.debug('CommitComposerProvider: Message received', { command: message.command });
 
-                switch (message.command) {
-                    case 'loadData':
-                        await this.loadChanges();
-                        break;
-                    case 'generate':
-                        await this.handleGenerate(message.providerConfig);
-                        break;
-                    case 'commit':
-                        await this.handleCommit(message.group);
-                        break;
-                }
+            switch (message.command) {
+                case 'loadData':
+                    await this.loadChanges();
+                    break;
+
+                case 'compose':
+                    await this.handleCompose(message.providerConfig);
+                    break;
+
+                case 'commitSingle':
+                    await this.handleCommitSingle(message.draft);
+                    break;
+
+                case 'commitAll':
+                    await this.handleCommitAll(message.drafts);
+                    break;
+
+                case 'refresh':
+                    await this.loadChanges();
+                    break;
             }
-        );
+        });
     }
 
     private async loadChanges() {
         if (!this._view) return;
         try {
-            Logger.info('CommitComposerProvider: Loading staged changes');
-            const staged = await this.gitService.getStagedChanges();
-            Logger.info('CommitComposerProvider: Staged changes loaded', { count: staged.length });
-
+            const staged = await this.orchestrator.getStagedChanges();
             this._view.webview.postMessage({
                 command: 'dataLoaded',
                 data: { staged }
@@ -106,36 +107,20 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async handleGenerate(config: any) {
+    private async handleCompose(providerConfig: any) {
         if (!this._view) return;
         try {
-            Logger.info('CommitComposerProvider: Generating commits', {
-                provider: config.provider,
-                model: config.model
-            });
+            this._view.webview.postMessage({ command: 'composing' });
 
-            this.aiProvider = AIProviderFactory.create(config.provider, {
-                apiKey: config.apiKey,
-                model: config.model
-            });
-
-            const changes = await this.gitService.getStagedChanges();
-            if (changes.length === 0) {
-                Logger.warn('CommitComposerProvider: No staged changes to analyze');
-                throw new Error('No staged changes to analyze');
-            }
-
-            Logger.info('CommitComposerProvider: Analyzing changes with AI', { fileCount: changes.length });
-            const result = await this.aiProvider.analyzeChanges(changes);
-            Logger.info('CommitComposerProvider: AI analysis complete', { groupCount: result.groups.length });
+            const result = await this.orchestrator.compose(providerConfig);
 
             this._view.webview.postMessage({
-                command: 'generated',
-                groups: result.groups
+                command: 'composed',
+                drafts: result.drafts,
+                reasoning: result.reasoning
             });
-
         } catch (e) {
-            Logger.error('CommitComposerProvider: Failed to generate commits', e);
+            Logger.error('CommitComposerProvider: Compose failed', e);
             this._view.webview.postMessage({
                 command: 'error',
                 message: (e as Error).message
@@ -143,23 +128,45 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async handleCommit(group: CommitGroup) {
+    private async handleCommitSingle(draft: DraftCommit) {
         if (!this._view) return;
         try {
-            Logger.info('CommitComposerProvider: Creating commit', {
-                message: group.message,
-                fileCount: group.files.length
+            await this.commitExecutor.executeSingle(draft);
+            vscode.window.showInformationMessage(`Committed: ${draft.message.split('\n')[0]}`);
+            this._view.webview.postMessage({ command: 'commitSuccess', draftId: draft.id });
+            await this.loadChanges();
+        } catch (e) {
+            Logger.error('CommitComposerProvider: Commit failed', e);
+            this._view.webview.postMessage({
+                command: 'error',
+                message: (e as Error).message
+            });
+        }
+    }
+
+    private async handleCommitAll(drafts: DraftCommit[]) {
+        if (!this._view) return;
+        try {
+            const results = await this.commitExecutor.executeAll(drafts, (progress) => {
+                this._view?.webview.postMessage({
+                    command: 'commitProgress',
+                    progress
+                });
             });
 
-            const files = group.files.map(f => f.path);
-            await this.gitService.createCommit(group.message, files);
+            const successCount = results.filter(r => r.success).length;
+            vscode.window.showInformationMessage(
+                `Committed ${successCount}/${results.length} commits successfully.`
+            );
 
-            Logger.info('CommitComposerProvider: Commit created successfully');
-            vscode.window.showInformationMessage(`Committed: ${group.message}`);
-            await this.loadChanges(); // Refresh
+            await this.loadChanges();
+            this._view.webview.postMessage({ command: 'commitAllDone', results });
         } catch (e) {
-            Logger.error('CommitComposerProvider: Failed to create commit', e);
-            vscode.window.showErrorMessage(`Commit failed: ${(e as Error).message}`);
+            Logger.error('CommitComposerProvider: Commit all failed', e);
+            this._view.webview.postMessage({
+                command: 'error',
+                message: (e as Error).message
+            });
         }
     }
 }
@@ -171,6 +178,4 @@ function getNonce() {
         text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
     return text;
-}
-
 }
