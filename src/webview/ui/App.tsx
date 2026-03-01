@@ -1,190 +1,155 @@
-import React, { useState, useEffect } from 'react';
-
-// VS Code API wrapper
-const vscode = acquireVsCodeApi();
-
-function acquireVsCodeApi(): any {
-    if ((window as any).acquireVsCodeApi) {
-        return (window as any).acquireVsCodeApi();
-    }
-    return {
-        postMessage: (msg: any) => console.log('Mock postMessage:', msg),
-        getState: () => ({}),
-        setState: (state: any) => { }
-    };
-}
+import React, { useEffect } from 'react';
+import { useCommitStore } from './store/commitStore';
+import { useVSCodeAPI } from './hooks/useVSCodeAPI';
+import AIControls from './components/AIControls';
+import FileList from './components/FileList';
+import CommitTree from './components/CommitTree';
+import DiffViewer from './components/DiffViewer';
+import CommitEditor from './components/CommitEditor';
+import StatusBar from './components/StatusBar';
+import './index.css';
 
 export default function App() {
-    const [provider, setProvider] = useState('openai');
-    const [apiKey, setApiKey] = useState('');
-    const [model, setModel] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [stagedFiles, setStagedFiles] = useState<any[]>([]);
-    const [groups, setGroups] = useState<any[]>([]);
-    const [error, setError] = useState<string | null>(null);
+    const {
+        stagedFiles,
+        drafts,
+        isLoading,
+        isCommitting,
+        providerConfig,
+        activeView,
+        setStagedFiles,
+        setDrafts,
+        setLoading,
+        setCommitting,
+        setError,
+        setCommitProgress,
+        markCommitted,
+        setActiveView,
+    } = useCommitStore();
 
+    const { postMessage, onMessage } = useVSCodeAPI();
+
+    // Listen for messages from the extension host
     useEffect(() => {
-        // Listen for messages from extension
-        const handler = (event: MessageEvent) => {
-            const message = event.data;
+        const unsub = onMessage((message) => {
             switch (message.command) {
                 case 'dataLoaded':
-                    setStagedFiles(message.data.staged);
+                    setStagedFiles(message.data.staged || []);
+                    break;
+
+                case 'composing':
+                    setLoading(true);
+                    setError(null);
+                    break;
+
+                case 'composed':
+                    setDrafts(message.drafts || [], message.reasoning);
                     setLoading(false);
                     break;
-                case 'generated':
-                    setGroups(message.groups);
-                    setLoading(false);
+
+                case 'commitSuccess':
+                    markCommitted(message.draftId);
+                    setCommitting(false);
                     break;
+
+                case 'commitProgress':
+                    setCommitting(true);
+                    setCommitProgress(message.progress);
+                    break;
+
+                case 'commitAllDone':
+                    setCommitting(false);
+                    setCommitProgress(null);
+                    break;
+
                 case 'error':
                     setError(message.message);
                     setLoading(false);
+                    setCommitting(false);
                     break;
             }
-        };
+        });
 
-        window.addEventListener('message', handler);
+        // Request initial data
+        postMessage('loadData');
 
-        // Initial load
-        vscode.postMessage({ command: 'loadData' });
-
-        return () => window.removeEventListener('message', handler);
+        return unsub;
     }, []);
 
-    useEffect(() => {
-        if (provider === 'openai') {
-            setModel('gpt-5-mini');
-        } else if (provider === 'google') {
-            setModel('gemini-2.5-flash');
-        } else {
-            setModel('');
-        }
-    }, [provider]);
-
-    const handleGenerate = () => {
-        if (!apiKey) {
-            setError('Please enter an OpenAI API Key');
+    const handleCompose = () => {
+        if (!providerConfig.apiKey && providerConfig.provider !== 'ollama') {
+            setError('Please enter an API key for the selected provider.');
             return;
         }
-        setLoading(true);
         setError(null);
-        vscode.postMessage({
-            command: 'generate',
-            providerConfig: {
-                provider: provider,
-                apiKey,
-                model: model
-            }
-        });
+        postMessage('compose', { providerConfig });
     };
 
-    const handleCommit = (group: any) => {
-        vscode.postMessage({
-            command: 'commit',
-            group
-        });
+    const handleCommitAll = () => {
+        const pending = drafts.filter(d => d.state !== 'committed');
+        if (pending.length === 0) return;
+        postMessage('commitAll', { drafts: pending });
     };
+
+    const handleRefresh = () => {
+        postMessage('refresh');
+    };
+
+    const pendingCount = drafts.filter(d => d.state !== 'committed').length;
 
     return (
-        <div className="container">
-            <h1>Git Commit Composer</h1>
-
-            <div className="card">
-                <label>AI Provider:</label>
-                <select className="input" value={provider} onChange={e => setProvider(e.target.value)}>
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="google">Google Gemini</option>
-                    <option value="groq">Groq</option>
-                </select>
-
-                <label>API Key:</label>
-                <input
-                    type="password"
-                    className="input"
-                    value={apiKey}
-                    onChange={e => setApiKey(e.target.value)}
-                    placeholder="Enter API Key"
-                />
-
-                <label>Model (Optional):</label>
-                {['openai', 'google'].includes(provider) ? (
-                    <select
-                        className="input"
-                        value={model}
-                        onChange={e => setModel(e.target.value)}
-                    >
-                        {provider === 'openai' && (
-                            <>
-                                <option value="gpt-5.2">GPT-5.2</option>
-                                <option value="gpt-5.1">GPT-5.1</option>
-                                <option value="gpt-5">GPT-5</option>
-                                <option value="gpt-5-mini">GPT-5 mini (Recommended)</option>
-                                <option value="gpt-5-nano">GPT-5 nano</option>
-                                <option value="gpt-4.1">GPT-4.1</option>
-                                <option value="o4-mini">o4 mini</option>
-                                <option value="o3">o3</option>
-                                <option value="o3-pro">o3 Pro</option>
-                                <option value="o3-mini">o3 mini</option>
-                                <option value="gpt-4o">GPT-4o</option>
-                            </>
-                        )}
-                        {provider === 'google' && (
-                            <>
-                                <option value="gemini-3.0-pro-preview">Gemini 3 Pro (Preview)</option>
-                                <option value="gemini-3.0-flash-preview">Gemini 3 Flash (Preview)</option>
-                                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
-                                <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
-                                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash-Lite</option>
-                                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                                <option value="gemini-1.5-flash-8b">Gemini 1.5 Flash 8B</option>
-                            </>
-                        )}
-                    </select>
-                ) : (
-                    <input
-                        type="text"
-                        className="input"
-                        value={model}
-                        onChange={e => setModel(e.target.value)}
-                        placeholder="e.g. claude-3, llama3-70b"
-                    />
-                )}
+        <div className="git-composer">
+            {/* Header */}
+            <div className="gc-header">
+                <h2 className="gc-title">Git Composer</h2>
+                <button className="btn btn-icon" onClick={handleRefresh} title="Refresh">↻</button>
             </div>
 
-            <div className="card">
-                <h3>Staged Files ({stagedFiles.length})</h3>
-                {stagedFiles.length === 0 && <p>No staged files found.</p>}
-                <ul>
-                    {stagedFiles.map(f => (
-                        <li key={f.path}>{f.path} ({f.changeType})</li>
-                    ))}
-                </ul>
-                <button className="button" onClick={handleGenerate} disabled={loading || stagedFiles.length === 0}>
-                    {loading ? 'Generating...' : 'Compose Commits'}
+            {/* AI Controls */}
+            <AIControls />
+
+            {/* Compose Button */}
+            <div className="gc-compose-section">
+                <button
+                    className="btn btn-primary btn-full"
+                    onClick={handleCompose}
+                    disabled={isLoading || stagedFiles.length === 0}
+                >
+                    {isLoading ? '⏳ Analyzing…' : '⚡ Auto-Compose Commits'}
                 </button>
             </div>
 
-            {error && <div className="error" style={{ color: 'red' }}>{error}</div>}
+            {/* Status Bar */}
+            <StatusBar />
 
-            {groups.length > 0 && (
-                <div className="groups">
-                    <h3>Suggested Commits</h3>
-                    {groups.map(group => (
-                        <div key={group.id} className="card">
-                            <h4>{group.message.split('\n')[0]}</h4>
-                            <pre style={{ whiteSpace: 'pre-wrap' }}>{group.message}</pre>
-                            <div className="file-list">
-                                <small>Files: {group.files.map((f: any) => f.path).join(', ')}</small>
-                            </div>
-                            <br />
-                            <button className="button" onClick={() => handleCommit(group)}>Commit</button>
+            {/* Main Content */}
+            {activeView === 'diff' ? (
+                <DiffViewer />
+            ) : activeView === 'editor' ? (
+                <CommitEditor />
+            ) : (
+                <>
+                    {/* File List */}
+                    <FileList />
+
+                    {/* Draft Commits */}
+                    <CommitTree />
+
+                    {/* Commit All Button */}
+                    {pendingCount > 0 && (
+                        <div className="gc-commit-all-section">
+                            <button
+                                className="btn btn-success btn-full"
+                                onClick={handleCommitAll}
+                                disabled={isCommitting}
+                            >
+                                {isCommitting
+                                    ? '⏳ Committing…'
+                                    : `✅ Commit All (${pendingCount})`}
+                            </button>
                         </div>
-                    ))}
-                </div>
+                    )}
+                </>
             )}
         </div>
     );
