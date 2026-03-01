@@ -1,0 +1,147 @@
+import simpleGit, { SimpleGit } from 'simple-git';
+import * as vscode from 'vscode';
+import { FileChange, ChangeType, RepoContext } from '../../types/git';
+
+export class GitService {
+    private git: SimpleGit;
+    private workspacePath: string;
+
+    constructor() {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+            throw new Error('No workspace folder found');
+        }
+        this.workspacePath = workspaceFolder.uri.fsPath;
+        this.git = simpleGit(this.workspacePath);
+    }
+
+    // --- Staged / Unstaged ---
+
+    async getStagedChanges(): Promise<FileChange[]> {
+        const status = await this.git.status();
+        const changes: FileChange[] = [];
+
+        for (const file of status.files) {
+            if (file.index !== ' ' && file.index !== '?') {
+                const diff = await this.getFileDiff(file.path, true);
+                changes.push({
+                    path: file.path,
+                    changeType: this.mapChangeType(file.index),
+                    diff,
+                    additions: this.countAdditions(diff),
+                    deletions: this.countDeletions(diff)
+                });
+            }
+        }
+        return changes;
+    }
+
+    async getUnstagedChanges(): Promise<FileChange[]> {
+        const status = await this.git.status();
+        const changes: FileChange[] = [];
+
+        for (const file of status.files) {
+            if (file.working_dir !== ' ' && file.working_dir !== '?') {
+                const diff = await this.getFileDiff(file.path, false);
+                changes.push({
+                    path: file.path,
+                    changeType: this.mapChangeType(file.working_dir),
+                    diff,
+                    additions: this.countAdditions(diff),
+                    deletions: this.countDeletions(diff)
+                });
+            }
+        }
+        return changes;
+    }
+
+    // --- File diffs ---
+
+    async getFileDiff(filePath: string, staged: boolean): Promise<string> {
+        const args = staged ? ['--cached'] : [];
+        return this.git.diff([...args, '--', filePath]);
+    }
+
+    async getStagedDiff(): Promise<string> {
+        return this.git.diff(['--cached', '--patch', '--no-color']);
+    }
+
+    // --- Stage / Unstage ---
+
+    async stageFiles(files: string[]): Promise<void> {
+        await this.git.add(files);
+    }
+
+    async unstageFiles(files: string[]): Promise<void> {
+        await this.git.reset(['HEAD', '--', ...files]);
+    }
+
+    async unstageAll(): Promise<void> {
+        await this.git.reset(['HEAD']);
+    }
+
+    // --- Commit ---
+
+    async createCommit(message: string, files: string[]): Promise<void> {
+        await this.git.commit(message, files);
+    }
+
+    // --- Repository context ---
+
+    async getRepoContext(): Promise<RepoContext> {
+        const [branchResult, logResult] = await Promise.all([
+            this.git.branch(),
+            this.git.log({ maxCount: 10 }),
+        ]);
+
+        const repoName = this.workspacePath.split('/').pop() || 'unknown';
+        const branch = branchResult.current;
+        const recentCommits = logResult.all.map(c => c.message);
+
+        // Detect project type from common config files
+        const projectType = await this.detectProjectType();
+
+        return { repoName, branch, recentCommits, projectType };
+    }
+
+    async getRecentCommits(count: number = 10): Promise<string[]> {
+        const log = await this.git.log({ maxCount: count });
+        return log.all.map(c => c.message);
+    }
+
+    // --- Helpers ---
+
+    private async detectProjectType(): Promise<string> {
+        try {
+            const status = await this.git.raw(['ls-files']);
+            const files = status.split('\n');
+            if (files.some(f => f === 'package.json')) return 'node';
+            if (files.some(f => f === 'Cargo.toml')) return 'rust';
+            if (files.some(f => f === 'go.mod')) return 'go';
+            if (files.some(f => f === 'requirements.txt' || f === 'pyproject.toml')) return 'python';
+            if (files.some(f => f === 'pom.xml' || f === 'build.gradle')) return 'java';
+            return 'unknown';
+        } catch {
+            return 'unknown';
+        }
+    }
+
+    private mapChangeType(gitStatus: string): ChangeType {
+        switch (gitStatus) {
+            case 'M': return ChangeType.Modified;
+            case 'A': return ChangeType.Added;
+            case 'D': return ChangeType.Deleted;
+            case 'R': return ChangeType.Renamed;
+            case 'C': return ChangeType.Copied;
+            default: return ChangeType.Modified;
+        }
+    }
+
+    private countAdditions(diff: string): number {
+        return (diff.match(/^\+(?!\+\+)/gm) || []).length;
+    }
+
+    private countDeletions(diff: string): number {
+        return (diff.match(/^-(?!--)/gm) || []).length;
+    }
+}
