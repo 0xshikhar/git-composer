@@ -19,6 +19,16 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "views": {
+      "scm": [
+        {
+          "type": "webview",
+          "id": "commitComposer.sidebarView",
+          "name": "Git Composer",
+          "icon": "$(git-commit)"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "commitComposer.autoCompose",
@@ -26,15 +36,16 @@
       }
     ],
     "configuration": {
-      "title": "Commit Composer",
+      "title": "Git Composer",
       "properties": {
         "commitComposer.aiProvider": {
           "type": "string",
           "enum": [
             "openai",
             "anthropic",
-            "google",
-            "groq"
+            "gemini",
+            "kimi",
+            "ollama"
           ],
           "default": "openai",
           "description": "AI Provider to use for generating commits"
@@ -48,6 +59,32 @@
           "type": "string",
           "default": "",
           "description": "Model to use (leave empty for provider default)"
+        },
+        "commitComposer.ollamaHost": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama server URL for local model inference"
+        },
+        "commitComposer.commitFormat": {
+          "type": "string",
+          "enum": [
+            "conventional",
+            "angular",
+            "gitmoji",
+            "custom"
+          ],
+          "default": "conventional",
+          "description": "Commit message format style"
+        },
+        "commitComposer.maxSubjectLength": {
+          "type": "number",
+          "default": 72,
+          "description": "Maximum length for commit subject line"
+        },
+        "commitComposer.splitThreshold": {
+          "type": "number",
+          "default": 3,
+          "description": "Number of files above which the splitter groups into multiple commits"
         }
       }
     }
@@ -74,22 +111,29 @@
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
     "@vscode/test-electron": "^2.3.8",
+    "autoprefixer": "^10.4.27",
     "css-loader": "^7.1.2",
     "eslint": "^8.56.0",
     "glob": "^8.1.0",
     "mocha": "^10.2.0",
+    "postcss": "^8.5.6",
+    "postcss-loader": "^8.2.1",
     "style-loader": "^4.0.0",
+    "tailwindcss": "^4.2.1",
     "ts-loader": "^9.5.1",
     "typescript": "^5.3.3",
     "webpack": "^5.89.0",
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "axios": "^1.6.0",
     "diff-match-patch": "^1.0.5",
+    "lucide-react": "^0.575.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "simple-git": "^3.22.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "zustand": "^5.0.11"
   }
 }
