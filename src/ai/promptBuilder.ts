@@ -1,11 +1,9 @@
-import { FileChange } from '../types/git';
+import { FileChange, RepoContext } from '../types/git';
 
 export class PromptBuilder {
-    static buildGroupingPrompt(changes: FileChange[]): string {
+    static buildGroupingPrompt(changes: FileChange[], context?: RepoContext): string {
         const filesInfo = changes.map(change => {
-            // Truncate large diffs to save tokens
             const truncatedDiff = this.truncateDiff(change.diff, 100);
-
             return {
                 path: change.path,
                 type: change.changeType,
@@ -15,8 +13,21 @@ export class PromptBuilder {
             };
         });
 
-        return `Analyze these git changes and group them into logical commits.
+        let contextBlock = '';
+        if (context) {
+            contextBlock = `
+Repository Context:
+- Repository: ${context.repoName}
+- Branch: ${context.branch}
+- Project Type: ${context.projectType}
+- Recent Commits:
+${context.recentCommits.slice(0, 5).map(c => `  - ${c}`).join('\n')}
 
+`;
+        }
+
+        return `Analyze these git changes and group them into logical commits.
+${contextBlock}
 Files changed:
 ${JSON.stringify(filesInfo, null, 2)}
 
@@ -26,6 +37,7 @@ Requirements:
 3. Separate unrelated changes
 4. Follow conventional commit format
 5. Consider file dependencies and relationships
+6. Assign a confidence score (0-100) for each grouping
 
 Return a JSON object with this structure:
 {
@@ -43,7 +55,7 @@ Return a JSON object with this structure:
 }`;
     }
 
-    static buildMessagePrompt(files: FileChange[]): string {
+    static buildMessagePrompt(files: FileChange[], context?: RepoContext): string {
         const filesInfo = files.map(f => ({
             path: f.path,
             type: f.changeType,
@@ -52,8 +64,13 @@ Return a JSON object with this structure:
             diff: this.truncateDiff(f.diff, 50)
         }));
 
-        return `Generate a clear, conventional commit message for these changes:
+        let contextBlock = '';
+        if (context) {
+            contextBlock = `\nRepository: ${context.repoName} | Branch: ${context.branch}\n`;
+        }
 
+        return `Generate a clear, conventional commit message for these changes:
+${contextBlock}
 ${JSON.stringify(filesInfo, null, 2)}
 
 Format: <type>(<scope>): <subject>
@@ -78,7 +95,6 @@ Return only the commit message, no JSON.`;
     }
 
     static estimateTokens(text: string): number {
-        // Rough estimation: ~4 characters per token
         return Math.ceil(text.length / 4);
     }
 }
