@@ -82,54 +82,28 @@ module.exports = require("vscode");
 
 "use strict";
 
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.GitService = void 0;
 const simple_git_1 = __importDefault(__webpack_require__(3));
-const vscode = __importStar(__webpack_require__(1));
 const git_1 = __webpack_require__(22);
 class GitService {
-    constructor() {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) {
-            throw new Error('No workspace folder found');
+    constructor(workspacePath) {
+        if (workspacePath) {
+            this.workspacePath = workspacePath;
         }
-        this.workspacePath = workspaceFolder.uri.fsPath;
+        else {
+            // Only import vscode as a runtime dependency (not in pure unit test context)
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const vscode = __webpack_require__(1);
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) {
+                throw new Error('No workspace folder found');
+            }
+            this.workspacePath = workspaceFolder.uri.fsPath;
+        }
         this.git = (0, simple_git_1.default)(this.workspacePath);
     }
     // --- Staged / Unstaged ---
@@ -7377,97 +7351,69 @@ exports.CommitExecutor = CommitExecutor;
 
 /***/ }),
 /* 29 */
-/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
 
 "use strict";
 
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Logger = void 0;
-const vscode = __importStar(__webpack_require__(1));
+/**
+ * Logger that works in both VS Code extension context and plain Node.js (tests).
+ * It lazy-requires vscode so it doesn't crash when running unit tests without VS Code.
+ */
 class Logger {
     static initialize() {
-        if (!this.outputChannel) {
-            this.outputChannel = vscode.window.createOutputChannel('Git Commit Composer');
+        if (this.outputChannel)
+            return;
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const vscode = __webpack_require__(1);
+            this.outputChannel = vscode.window.createOutputChannel('Git Composer');
+        }
+        catch {
+            // In a pure Node.js / test context vscode does not exist — use a console shim
+            this.outputChannel = {
+                appendLine: (val) => console.log(val),
+                show: () => { },
+            };
         }
     }
     static info(message, data) {
         this.initialize();
-        const timestamp = new Date().toISOString();
-        const logMessage = `[INFO ${timestamp}] ${message}`;
-        this.outputChannel.appendLine(logMessage);
-        if (data) {
+        const msg = `[INFO  ${ts()}] ${message}`;
+        this.outputChannel.appendLine(msg);
+        if (data)
             this.outputChannel.appendLine(JSON.stringify(data, null, 2));
-        }
-        console.log(logMessage, data);
+        console.log(msg, data ?? '');
     }
     static error(message, error) {
         this.initialize();
-        const timestamp = new Date().toISOString();
-        const logMessage = `[ERROR ${timestamp}] ${message}`;
-        this.outputChannel.appendLine(logMessage);
-        if (error) {
-            if (error instanceof Error) {
-                this.outputChannel.appendLine(`Error: ${error.message}`);
-                this.outputChannel.appendLine(`Stack: ${error.stack}`);
-            }
-            else {
-                this.outputChannel.appendLine(JSON.stringify(error, null, 2));
-            }
+        const msg = `[ERROR ${ts()}] ${message}`;
+        this.outputChannel.appendLine(msg);
+        if (error instanceof Error) {
+            this.outputChannel.appendLine(`Error: ${error.message}`);
+            this.outputChannel.appendLine(`Stack: ${error.stack || ''}`);
         }
-        console.error(logMessage, error);
+        else if (error) {
+            this.outputChannel.appendLine(JSON.stringify(error, null, 2));
+        }
+        console.error(msg, error ?? '');
     }
     static debug(message, data) {
         this.initialize();
-        const timestamp = new Date().toISOString();
-        const logMessage = `[DEBUG ${timestamp}] ${message}`;
-        this.outputChannel.appendLine(logMessage);
-        if (data) {
+        const msg = `[DEBUG ${ts()}] ${message}`;
+        this.outputChannel.appendLine(msg);
+        if (data)
             this.outputChannel.appendLine(JSON.stringify(data, null, 2));
-        }
-        console.debug(logMessage, data);
+        console.debug(msg, data ?? '');
     }
     static warn(message, data) {
         this.initialize();
-        const timestamp = new Date().toISOString();
-        const logMessage = `[WARN ${timestamp}] ${message}`;
-        this.outputChannel.appendLine(logMessage);
-        if (data) {
+        const msg = `[WARN  ${ts()}] ${message}`;
+        this.outputChannel.appendLine(msg);
+        if (data)
             this.outputChannel.appendLine(JSON.stringify(data, null, 2));
-        }
-        console.warn(logMessage, data);
+        console.warn(msg, data ?? '');
     }
     static show() {
         this.initialize();
@@ -7475,6 +7421,10 @@ class Logger {
     }
 }
 exports.Logger = Logger;
+Logger.outputChannel = null;
+function ts() {
+    return new Date().toISOString();
+}
 
 
 /***/ }),
@@ -17858,7 +17808,6 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.ConfigLoader = void 0;
-const vscode = __importStar(__webpack_require__(1));
 const fs = __importStar(__webpack_require__(7));
 const path = __importStar(__webpack_require__(27));
 const logger_1 = __webpack_require__(29);
@@ -17878,6 +17827,8 @@ const DEFAULT_CONFIG = {
  * Loads configuration from `.gitcomposer.json` (workspace root) and
  * VS Code settings, merging them with defaults.
  * Priority: .gitcomposer.json > VS Code settings > defaults.
+ *
+ * vscode is imported lazily so this class stays unit-testable without VS Code.
  */
 class ConfigLoader {
     constructor() {
@@ -17891,7 +17842,7 @@ class ConfigLoader {
     load() {
         // Start with defaults
         this.config = { ...DEFAULT_CONFIG };
-        // Layer 1: VS Code settings
+        // Layer 1: VS Code settings (only when running inside vscode)
         this.loadVSCodeSettings();
         // Layer 2: .gitcomposer.json (overrides VS Code settings)
         this.loadFileConfig();
@@ -17912,46 +17863,60 @@ class ConfigLoader {
     /**
      * Save current config to .gitcomposer.json in workspace root.
      */
-    saveToFile() {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder)
+    saveToFile(workspacePath) {
+        const rootPath = workspacePath || this.getWorkspacePath();
+        if (!rootPath)
             return;
-        const configPath = path.join(workspaceFolder.uri.fsPath, '.gitcomposer.json');
+        const configPath = path.join(rootPath, '.gitcomposer.json');
         const toSave = { ...this.config };
         // Don't save apiKey to file for security
         delete toSave.apiKey;
         fs.writeFileSync(configPath, JSON.stringify(toSave, null, 2), 'utf-8');
         logger_1.Logger.info('ConfigLoader: Saved config to .gitcomposer.json');
     }
+    getWorkspacePath() {
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const vscode = __webpack_require__(1);
+            return vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
+        }
+        catch {
+            return undefined;
+        }
+    }
     loadVSCodeSettings() {
-        const vsConfig = vscode.workspace.getConfiguration('commitComposer');
-        const provider = vsConfig.get('aiProvider');
-        if (provider)
-            this.config.provider = provider;
-        const apiKey = vsConfig.get('apiKey');
-        if (apiKey)
-            this.config.apiKey = apiKey;
-        const model = vsConfig.get('model');
-        if (model)
-            this.config.model = model;
-        const ollamaHost = vsConfig.get('ollamaHost');
-        if (ollamaHost)
-            this.config.ollamaHost = ollamaHost;
-        const commitFormat = vsConfig.get('commitFormat');
-        if (commitFormat)
-            this.config.commitFormat = commitFormat;
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const vscode = __webpack_require__(1);
+            const vsConfig = vscode.workspace.getConfiguration('commitComposer');
+            const provider = vsConfig.get('aiProvider');
+            if (provider)
+                this.config.provider = provider;
+            const apiKey = vsConfig.get('apiKey');
+            if (apiKey)
+                this.config.apiKey = apiKey;
+            const model = vsConfig.get('model');
+            if (model)
+                this.config.model = model;
+            const ollamaHost = vsConfig.get('ollamaHost');
+            if (ollamaHost)
+                this.config.ollamaHost = ollamaHost;
+            const commitFormat = vsConfig.get('commitFormat');
+            if (commitFormat)
+                this.config.commitFormat = commitFormat;
+        }
+        catch {
+            // Not in VS Code context (e.g. unit tests) — use defaults
+        }
     }
     loadFileConfig() {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder)
-            return;
-        const configPath = path.join(workspaceFolder.uri.fsPath, '.gitcomposer.json');
+        const workspacePath = this.getWorkspacePath() || process.cwd();
+        const configPath = path.join(workspacePath, '.gitcomposer.json');
         if (!fs.existsSync(configPath))
             return;
         try {
             const raw = fs.readFileSync(configPath, 'utf-8');
             const fileConfig = JSON.parse(raw);
-            // Merge file config over current config
             if (fileConfig.provider)
                 this.config.provider = fileConfig.provider;
             if (fileConfig.model)
