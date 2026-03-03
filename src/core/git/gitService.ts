@@ -1,17 +1,23 @@
 import simpleGit, { SimpleGit } from 'simple-git';
-import * as vscode from 'vscode';
 import { FileChange, ChangeType, RepoContext } from '../../types/git';
 
 export class GitService {
     private git: SimpleGit;
     private workspacePath: string;
 
-    constructor() {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) {
-            throw new Error('No workspace folder found');
+    constructor(workspacePath?: string) {
+        if (workspacePath) {
+            this.workspacePath = workspacePath;
+        } else {
+            // Only import vscode as a runtime dependency (not in pure unit test context)
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const vscode = require('vscode');
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) {
+                throw new Error('No workspace folder found');
+            }
+            this.workspacePath = workspaceFolder.uri.fsPath;
         }
-        this.workspacePath = workspaceFolder.uri.fsPath;
         this.git = simpleGit(this.workspacePath);
     }
 
