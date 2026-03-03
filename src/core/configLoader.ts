@@ -1,4 +1,3 @@
-import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from '../utils/logger';
@@ -34,6 +33,8 @@ const DEFAULT_CONFIG: ComposerConfig = {
  * Loads configuration from `.gitcomposer.json` (workspace root) and
  * VS Code settings, merging them with defaults.
  * Priority: .gitcomposer.json > VS Code settings > defaults.
+ *
+ * vscode is imported lazily so this class stays unit-testable without VS Code.
  */
 export class ConfigLoader {
     private config: ComposerConfig = { ...DEFAULT_CONFIG };
@@ -50,7 +51,7 @@ export class ConfigLoader {
         // Start with defaults
         this.config = { ...DEFAULT_CONFIG };
 
-        // Layer 1: VS Code settings
+        // Layer 1: VS Code settings (only when running inside vscode)
         this.loadVSCodeSettings();
 
         // Layer 2: .gitcomposer.json (overrides VS Code settings)
@@ -76,11 +77,11 @@ export class ConfigLoader {
     /**
      * Save current config to .gitcomposer.json in workspace root.
      */
-    saveToFile(): void {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) return;
+    saveToFile(workspacePath?: string): void {
+        const rootPath = workspacePath || this.getWorkspacePath();
+        if (!rootPath) return;
 
-        const configPath = path.join(workspaceFolder.uri.fsPath, '.gitcomposer.json');
+        const configPath = path.join(rootPath, '.gitcomposer.json');
         const toSave: Partial<ComposerConfig> = { ...this.config };
         // Don't save apiKey to file for security
         delete (toSave as any).apiKey;
@@ -89,37 +90,50 @@ export class ConfigLoader {
         Logger.info('ConfigLoader: Saved config to .gitcomposer.json');
     }
 
+    private getWorkspacePath(): string | undefined {
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const vscode = require('vscode');
+            return vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
+        } catch {
+            return undefined;
+        }
+    }
+
     private loadVSCodeSettings(): void {
-        const vsConfig = vscode.workspace.getConfiguration('commitComposer');
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const vscode = require('vscode');
+            const vsConfig = vscode.workspace.getConfiguration('commitComposer');
 
-        const provider = vsConfig.get<string>('aiProvider');
-        if (provider) this.config.provider = provider;
+            const provider = vsConfig.get('aiProvider') as string | undefined;
+            if (provider) this.config.provider = provider;
 
-        const apiKey = vsConfig.get<string>('apiKey');
-        if (apiKey) this.config.apiKey = apiKey;
+            const apiKey = vsConfig.get('apiKey') as string | undefined;
+            if (apiKey) this.config.apiKey = apiKey;
 
-        const model = vsConfig.get<string>('model');
-        if (model) this.config.model = model;
+            const model = vsConfig.get('model') as string | undefined;
+            if (model) this.config.model = model;
 
-        const ollamaHost = vsConfig.get<string>('ollamaHost');
-        if (ollamaHost) this.config.ollamaHost = ollamaHost;
+            const ollamaHost = vsConfig.get('ollamaHost') as string | undefined;
+            if (ollamaHost) this.config.ollamaHost = ollamaHost;
 
-        const commitFormat = vsConfig.get<string>('commitFormat');
-        if (commitFormat) this.config.commitFormat = commitFormat as ComposerConfig['commitFormat'];
+            const commitFormat = vsConfig.get('commitFormat') as string | undefined;
+            if (commitFormat) this.config.commitFormat = commitFormat as ComposerConfig['commitFormat'];
+        } catch {
+            // Not in VS Code context (e.g. unit tests) — use defaults
+        }
     }
 
     private loadFileConfig(): void {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) return;
-
-        const configPath = path.join(workspaceFolder.uri.fsPath, '.gitcomposer.json');
+        const workspacePath = this.getWorkspacePath() || process.cwd();
+        const configPath = path.join(workspacePath, '.gitcomposer.json');
         if (!fs.existsSync(configPath)) return;
 
         try {
             const raw = fs.readFileSync(configPath, 'utf-8');
             const fileConfig = JSON.parse(raw);
 
-            // Merge file config over current config
             if (fileConfig.provider) this.config.provider = fileConfig.provider;
             if (fileConfig.model) this.config.model = fileConfig.model;
             if (fileConfig.apiKey) this.config.apiKey = fileConfig.apiKey;
