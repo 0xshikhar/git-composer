@@ -1,65 +1,70 @@
-import * as vscode from 'vscode';
+type OutputChannel = { appendLine(val: string): void; show(): void };
 
+/**
+ * Logger that works in both VS Code extension context and plain Node.js (tests).
+ * It lazy-requires vscode so it doesn't crash when running unit tests without VS Code.
+ */
 export class Logger {
-    private static outputChannel: vscode.OutputChannel;
+    private static outputChannel: OutputChannel | null = null;
 
     static initialize() {
-        if (!this.outputChannel) {
-            this.outputChannel = vscode.window.createOutputChannel('Git Commit Composer');
+        if (this.outputChannel) return;
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const vscode = require('vscode');
+            this.outputChannel = vscode.window.createOutputChannel('Git Composer');
+        } catch {
+            // In a pure Node.js / test context vscode does not exist — use a console shim
+            this.outputChannel = {
+                appendLine: (val: string) => console.log(val),
+                show: () => { },
+            };
         }
     }
 
     static info(message: string, data?: any) {
         this.initialize();
-        const timestamp = new Date().toISOString();
-        const logMessage = `[INFO ${timestamp}] ${message}`;
-        this.outputChannel.appendLine(logMessage);
-        if (data) {
-            this.outputChannel.appendLine(JSON.stringify(data, null, 2));
-        }
-        console.log(logMessage, data);
+        const msg = `[INFO  ${ts()}] ${message}`;
+        this.outputChannel!.appendLine(msg);
+        if (data) this.outputChannel!.appendLine(JSON.stringify(data, null, 2));
+        console.log(msg, data ?? '');
     }
 
     static error(message: string, error?: any) {
         this.initialize();
-        const timestamp = new Date().toISOString();
-        const logMessage = `[ERROR ${timestamp}] ${message}`;
-        this.outputChannel.appendLine(logMessage);
-        if (error) {
-            if (error instanceof Error) {
-                this.outputChannel.appendLine(`Error: ${error.message}`);
-                this.outputChannel.appendLine(`Stack: ${error.stack}`);
-            } else {
-                this.outputChannel.appendLine(JSON.stringify(error, null, 2));
-            }
+        const msg = `[ERROR ${ts()}] ${message}`;
+        this.outputChannel!.appendLine(msg);
+        if (error instanceof Error) {
+            this.outputChannel!.appendLine(`Error: ${error.message}`);
+            this.outputChannel!.appendLine(`Stack: ${error.stack || ''}`);
+        } else if (error) {
+            this.outputChannel!.appendLine(JSON.stringify(error, null, 2));
         }
-        console.error(logMessage, error);
+        console.error(msg, error ?? '');
     }
 
     static debug(message: string, data?: any) {
         this.initialize();
-        const timestamp = new Date().toISOString();
-        const logMessage = `[DEBUG ${timestamp}] ${message}`;
-        this.outputChannel.appendLine(logMessage);
-        if (data) {
-            this.outputChannel.appendLine(JSON.stringify(data, null, 2));
-        }
-        console.debug(logMessage, data);
+        const msg = `[DEBUG ${ts()}] ${message}`;
+        this.outputChannel!.appendLine(msg);
+        if (data) this.outputChannel!.appendLine(JSON.stringify(data, null, 2));
+        console.debug(msg, data ?? '');
     }
 
     static warn(message: string, data?: any) {
         this.initialize();
-        const timestamp = new Date().toISOString();
-        const logMessage = `[WARN ${timestamp}] ${message}`;
-        this.outputChannel.appendLine(logMessage);
-        if (data) {
-            this.outputChannel.appendLine(JSON.stringify(data, null, 2));
-        }
-        console.warn(logMessage, data);
+        const msg = `[WARN  ${ts()}] ${message}`;
+        this.outputChannel!.appendLine(msg);
+        if (data) this.outputChannel!.appendLine(JSON.stringify(data, null, 2));
+        console.warn(msg, data ?? '');
     }
 
     static show() {
         this.initialize();
-        this.outputChannel.show();
+        this.outputChannel!.show();
     }
+}
+
+function ts() {
+    return new Date().toISOString();
 }
