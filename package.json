@@ -96,9 +96,10 @@
     "package": "webpack --mode production --devtool hidden-source-map",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
-    "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "test": "pnpm run compile-tests && mocha --ui tdd --reporter spec 'out/test/suite/**/*.test.js'",
+    "test:integration": "pnpm run compile-tests && pnpm run compile && node ./out/test/runTest.js",
+    "prepackage": "pnpm run compile"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",
