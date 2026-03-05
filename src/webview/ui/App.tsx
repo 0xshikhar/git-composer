@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useCommitStore } from './store/commitStore';
 import { useVSCodeAPI } from './hooks/useVSCodeAPI';
 import AIControls from './components/AIControls';
@@ -6,10 +6,26 @@ import FileList from './components/FileList';
 import CommitTree from './components/CommitTree';
 import DiffViewer from './components/DiffViewer';
 import CommitEditor from './components/CommitEditor';
+import ComposeWorkspace from './components/ComposeWorkspace';
 import StatusBar from './components/StatusBar';
 import './index.css';
 
+type BootstrapPayload = {
+    mode?: 'sidebar' | 'panel';
+    autoCompose?: boolean;
+    providerConfig?: Partial<ReturnType<typeof useCommitStore.getState>['providerConfig']>;
+};
+
+function readBootstrapPayload(): BootstrapPayload {
+    const payload = (window as unknown as { __OPENGIT_BOOTSTRAP__?: BootstrapPayload }).__OPENGIT_BOOTSTRAP__;
+    return payload || { mode: 'sidebar', autoCompose: false };
+}
+
 export default function App() {
+    const bootstrap = useMemo(readBootstrapPayload, []);
+    const isPanelMode = bootstrap.mode === 'panel';
+    const autoComposeTriggered = useRef(false);
+
     const {
         stagedFiles,
         drafts,
@@ -30,6 +46,19 @@ export default function App() {
 
     const { postMessage, onMessage } = useVSCodeAPI();
 
+    const composeInCurrentView = useCallback(
+        (override?: Partial<typeof providerConfig>) => {
+            const currentConfig = useCommitStore.getState().providerConfig;
+            const resolvedConfig = { ...currentConfig, ...override };
+            setProviderConfig(override || {});
+            setError(null);
+            setLoading(true);
+            setActiveView('compose');
+            postMessage('compose', { providerConfig: resolvedConfig });
+        },
+        [postMessage, setActiveView, setError, setLoading, setProviderConfig]
+    );
+
     // Listen for messages from the extension host
     useEffect(() => {
         const unsub = onMessage((message) => {
@@ -39,6 +68,13 @@ export default function App() {
                     if (message.data.providerConfig) {
                         setProviderConfig(message.data.providerConfig);
                     }
+                    if (bootstrap.autoCompose && !autoComposeTriggered.current) {
+                        autoComposeTriggered.current = true;
+                        composeInCurrentView({
+                            ...(message.data.providerConfig || {}),
+                            ...(bootstrap.providerConfig || {}),
+                        });
+                    }
                     break;
 
                 case 'composing':
@@ -47,8 +83,17 @@ export default function App() {
                     break;
 
                 case 'composed':
-                    setDrafts(message.drafts || [], message.reasoning);
+                    setDrafts(message.drafts || [], message.reasoning, message.summary || null);
                     setLoading(false);
+                    setActiveView('compose');
+                    if ((message.drafts || []).length > 0) {
+                        const firstId = message.drafts[0].id;
+                        useCommitStore.getState().selectDraft(firstId);
+                    }
+                    break;
+
+                case 'triggerCompose':
+                    composeInCurrentView(message.providerConfig || bootstrap.providerConfig || {});
                     break;
 
                 case 'commitSuccess':
@@ -78,11 +123,29 @@ export default function App() {
         postMessage('loadData');
 
         return unsub;
-    }, []);
+    }, [
+        bootstrap.autoCompose,
+        bootstrap.providerConfig,
+        composeInCurrentView,
+        markCommitted,
+        onMessage,
+        postMessage,
+        setActiveView,
+        setCommitting,
+        setCommitProgress,
+        setDrafts,
+        setError,
+        setLoading,
+        setProviderConfig,
+        setStagedFiles,
+    ]);
 
     const handleCompose = () => {
-        setError(null);
-        postMessage('compose', { providerConfig });
+        if (!isPanelMode) {
+            postMessage('openComposerPanel', { providerConfig });
+            return;
+        }
+        composeInCurrentView(providerConfig);
     };
 
     const handleCommitAll = () => {
@@ -123,7 +186,9 @@ export default function App() {
             <StatusBar />
 
             {/* Main Content */}
-            {activeView === 'diff' ? (
+            {activeView === 'compose' ? (
+                <ComposeWorkspace isPanelMode={isPanelMode} />
+            ) : activeView === 'diff' ? (
                 <DiffViewer />
             ) : activeView === 'editor' ? (
                 <CommitEditor />

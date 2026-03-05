@@ -20,6 +20,10 @@ export interface DraftCommit {
     confidence: number;
     type?: string;
     scope?: string;
+    rationale?: string;
+    impact?: string;
+    verificationSteps?: string[];
+    risks?: string[];
 }
 
 export interface ProviderConfig {
@@ -27,6 +31,7 @@ export interface ProviderConfig {
     apiKey: string;
     model: string;
     baseUrl?: string;
+    additionalInstructions?: string;
 }
 
 export interface StoredKeyDisplay {
@@ -39,6 +44,7 @@ interface CommitStoreState {
     // Data
     stagedFiles: FileChange[];
     drafts: DraftCommit[];
+    summary: string | null;
     reasoning: string | null;
 
     // UI state
@@ -57,11 +63,11 @@ interface CommitStoreState {
     showKeyInput: boolean;
 
     // View mode
-    activeView: 'tree' | 'diff' | 'editor';
+    activeView: 'tree' | 'diff' | 'editor' | 'compose';
 
     // Actions
     setStagedFiles: (files: FileChange[]) => void;
-    setDrafts: (drafts: DraftCommit[], reasoning?: string | null) => void;
+    setDrafts: (drafts: DraftCommit[], reasoning?: string | null, summary?: string | null) => void;
     selectDraft: (id: string | null) => void;
     selectFile: (path: string | null) => void;
     setLoading: (loading: boolean) => void;
@@ -69,7 +75,7 @@ interface CommitStoreState {
     setError: (error: string | null) => void;
     setCommitProgress: (progress: { current: number; total: number } | null) => void;
     setProviderConfig: (config: Partial<ProviderConfig>) => void;
-    setActiveView: (view: 'tree' | 'diff' | 'editor') => void;
+    setActiveView: (view: 'tree' | 'diff' | 'editor' | 'compose') => void;
     setSavedKeys: (provider: string, keys: StoredKeyDisplay[]) => void;
     setShowKeyInput: (show: boolean) => void;
 
@@ -92,6 +98,7 @@ export const useCommitStore = create<CommitStoreState>((set, get) => ({
     // Initial state
     stagedFiles: [],
     drafts: [],
+    summary: null,
     reasoning: null,
     selectedDraftId: null,
     selectedFilePath: null,
@@ -110,7 +117,7 @@ export const useCommitStore = create<CommitStoreState>((set, get) => ({
 
     // Setters
     setStagedFiles: (files) => set({ stagedFiles: files }),
-    setDrafts: (drafts, reasoning = null) => set({ drafts, reasoning, error: null }),
+    setDrafts: (drafts, reasoning = null, summary = null) => set({ drafts, reasoning, summary, error: null }),
     selectDraft: (id) => set({ selectedDraftId: id }),
     selectFile: (path) => set({ selectedFilePath: path, activeView: 'diff' }),
     setLoading: (loading) => set({ isLoading: loading }),
@@ -210,6 +217,7 @@ export const useCommitStore = create<CommitStoreState>((set, get) => ({
         set({
             stagedFiles: [],
             drafts: [],
+            summary: null,
             reasoning: null,
             selectedDraftId: null,
             selectedFilePath: null,

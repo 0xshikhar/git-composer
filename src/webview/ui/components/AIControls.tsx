@@ -214,6 +214,18 @@ export default function AIControls() {
                     ))}
                 </select>
             </div>
+
+            <div className="ai-control-row">
+                <label className="ai-label">Additional Instructions (Optional)</label>
+                <textarea
+                    className="ai-input ai-textarea"
+                    rows={3}
+                    value={providerConfig.additionalInstructions || ''}
+                    onChange={(e) => setProviderConfig({ additionalInstructions: e.target.value })}
+                    placeholder="Example: prefer separating refactor from behavior changes; mention migrations explicitly."
+                    disabled={isLoading}
+                />
+            </div>
         </div>
     );
 }

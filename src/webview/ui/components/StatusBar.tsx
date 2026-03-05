@@ -2,7 +2,7 @@ import React from 'react';
 import { useCommitStore } from '../store/commitStore';
 
 export default function StatusBar() {
-    const { isLoading, isCommitting, error, commitProgress, drafts, reasoning } = useCommitStore();
+    const { isLoading, isCommitting, error, commitProgress, drafts, reasoning, summary } = useCommitStore();
 
     if (isCommitting && commitProgress) {
         return (
@@ -52,6 +52,9 @@ export default function StatusBar() {
                 <span className="status-confidence">Avg confidence: {avgConfidence}%</span>
                 {reasoning && (
                     <span className="status-reasoning" title={reasoning}>💡</span>
+                )}
+                {summary && (
+                    <span className="status-summary" title={summary}>📝</span>
                 )}
             </div>
         );
