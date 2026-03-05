@@ -55,7 +55,7 @@ export class OpenAIProvider extends AIProvider {
 
     protected async makeRequest(prompt: string): Promise<any> {
         try {
-            const model = this.config.model || 'gpt-5-mini';
+            const model = this.config.model || 'gpt-4o';
 
             Logger.debug('OpenAIProvider: Making API request', {
                 model,
