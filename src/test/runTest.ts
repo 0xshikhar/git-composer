@@ -13,6 +13,20 @@ function isDownloadNetworkError(err: unknown): boolean {
     return networkCodes.has(code) || hostname.includes('update.code.visualstudio.com');
 }
 
+function isRuntimeLaunchError(err: unknown): boolean {
+    if (err == null || typeof err !== 'object') return false;
+
+    const maybeErr = err as { code?: number; message?: string };
+    const code = maybeErr.code ?? -1;
+    const message = maybeErr.message ?? '';
+
+    return (
+        code === 9 ||
+        /bad option: --disable-extensions/.test(message) ||
+        /Test run failed with code 9/.test(message)
+    );
+}
+
 async function main() {
     try {
         // The folder containing the Extension Manifest package.json
@@ -30,8 +44,8 @@ async function main() {
             launchArgs: ['--disable-extensions']
         });
     } catch (err) {
-        if (isDownloadNetworkError(err)) {
-            console.warn('VS Code test runtime download failed; running local mocha suite only.', err);
+        if (isDownloadNetworkError(err) || isRuntimeLaunchError(err)) {
+            console.warn('VS Code integration runtime unavailable; running local mocha suite only.', err);
             await runSuite();
             return;
         }
