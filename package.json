@@ -99,16 +99,16 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run package",
+    "vscode:prepublish": "pnpm run package",
     "compile": "webpack",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
+    "package:vsix": "pnpm exec vsce package --no-dependencies",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "lint": "eslint src --ext ts",
     "test": "pnpm run compile-tests && mocha --ui tdd --reporter spec 'out/test/suite/**/*.test.js'",
-    "test:integration": "pnpm run compile-tests && pnpm run compile && node ./out/test/runTest.js",
-    "prepackage": "pnpm run compile"
+    "test:integration": "pnpm run compile-tests && pnpm run compile && node ./out/test/runTest.js"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",
@@ -121,6 +121,7 @@
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
     "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^3.7.1",
     "autoprefixer": "^10.4.27",
     "css-loader": "^7.1.2",
     "eslint": "^8.56.0",
