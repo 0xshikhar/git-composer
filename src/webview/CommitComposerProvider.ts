@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import { GitService } from '../core/git/gitService';
 import { Orchestrator, ComposeProviderConfig } from '../core/orchestrator';
-import { Orchestrator, ComposeProviderConfig } from '../core/orchestrator';
 import { CommitExecutor } from '../core/commitExecutor';
 import { ConfigLoader } from '../core/configLoader';
+import { KeyManager } from '../core/keyManager';
 import { DraftCommit } from '../types/commits';
 import { Logger } from '../utils/logger';
 
@@ -14,6 +14,7 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
     private _orchestrator?: Orchestrator;
     private _commitExecutor?: CommitExecutor;
     private _configLoader?: ConfigLoader;
+    private _keyManager?: KeyManager;
 
     constructor(extensionUri: vscode.Uri, keyManager?: KeyManager) {
         this._extensionUri = extensionUri;
@@ -265,13 +266,103 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
                 default:
                     Logger.warn('CommitComposerProvider: Unknown message command', { command: message.command });
                     break;
-
-                default:
-                    Logger.warn('CommitComposerProvider: Unknown message command', { command: message.command });
-                    break;
             }
         });
     }
+
+    private async handleLoadKeys(provider: string, webview: vscode.Webview) {
+        if (!this._keyManager) {
+            webview.postMessage({ command: 'keysLoaded', provider, keys: [], error: 'Key manager not initialized' });
+            return;
+        }
+
+        try {
+            const keys = await this._keyManager.getKeysForDisplay(provider);
+            webview.postMessage({ command: 'keysLoaded', provider, keys });
+        } catch (e) {
+            Logger.error('Failed to load keys', e);
+            webview.postMessage({ command: 'keysLoaded', provider, keys: [], error: String(e) });
+        }
+    }
+
+    private async handleSaveKey(provider: string, key: string, label: string | undefined, webview: vscode.Webview) {
+        if (!this._keyManager) {
+            webview.postMessage({ command: 'keySaved', provider, success: false, error: 'Key manager not initialized' });
+            return;
+        }
+
+        try {
+            await this._keyManager.addKey(provider, key, label);
+            const keys = await this._keyManager.getKeysForDisplay(provider);
+            webview.postMessage({ command: 'keySaved', provider, success: true, keys });
+            Logger.info(`Saved API key for ${provider}`);
+        } catch (e) {
+            Logger.error('Failed to save key', e);
+            webview.postMessage({ command: 'keySaved', provider, success: false, error: String(e) });
+        }
+    }
+
+    private async handleRemoveKey(provider: string, keyIndex: number, webview: vscode.Webview) {
+        if (!this._keyManager) {
+            webview.postMessage({ command: 'keyRemoved', provider, success: false, error: 'Key manager not initialized' });
+            return;
+        }
+
+        try {
+            await this._keyManager.removeKey(provider, keyIndex);
+            const keys = await this._keyManager.getKeysForDisplay(provider);
+            webview.postMessage({ command: 'keyRemoved', provider, success: true, keys });
+            Logger.info(`Removed API key ${keyIndex} for ${provider}`);
+        } catch (e) {
+            Logger.error('Failed to remove key', e);
+            webview.postMessage({ command: 'keyRemoved', provider, success: false, error: String(e) });
+        }
+    }
+
+    private async handleResetKeys(provider: string, webview: vscode.Webview) {
+        if (!this._keyManager) {
+            webview.postMessage({ command: 'keysReset', provider, success: false, error: 'Key manager not initialized' });
+            return;
+        }
+
+        try {
+            await this._keyManager.resetProvider(provider);
+            webview.postMessage({ command: 'keysReset', provider, success: true, keys: [] });
+            Logger.info(`Reset all API keys for ${provider}`);
+        } catch (e) {
+            Logger.error('Failed to reset keys', e);
+            webview.postMessage({ command: 'keysReset', provider, success: false, error: String(e) });
+        }
+    }
+
+    private async handleComposeWithKeyRotation(providerConfig: any) {
+        if (!this._view) return;
+
+        try {
+            // If using a saved key and it's not provided, rotate to next key (Gemini only handles multiple)
+            if (!providerConfig.apiKey && this._keyManager && providerConfig.provider !== 'ollama') {
+                const apiKey = await this._keyManager.getNextKey(providerConfig.provider);
+                if (apiKey) {
+                    providerConfig = { ...providerConfig, apiKey };
+                }
+            } else if (providerConfig.apiKey && this._keyManager && providerConfig.provider !== 'ollama') {
+                // If the user typed an API key that isn't saved, auto-save it.
+                const hasKeys = await this._keyManager.hasKey(providerConfig.provider);
+                if (!hasKeys) {
+                    await this._keyManager.addKey(providerConfig.provider, providerConfig.apiKey, 'Default');
+                }
+            }
+
+            await this.handleCompose(providerConfig);
+        } catch (e) {
+            Logger.error('Compose with key rotation failed', e);
+            this._view.webview.postMessage({
+                command: 'error',
+                message: (e as Error).message
+            });
+        }
+    }
+
 
     private async loadChanges() {
         if (!this._view) {

@@ -96,12 +96,14 @@ export default function AIControls() {
                                 )}
                             </div>
                             <div className="key-actions">
-                                <button
-                                    className="btn btn-sm"
-                                    onClick={() => setShowKeyInput(true)}
-                                >
-                                    + Add Key
-                                </button>
+                                {(providerConfig.provider === 'gemini' || !hasKeys) && (
+                                    <button
+                                        className="btn btn-sm"
+                                        onClick={() => setShowKeyInput(true)}
+                                    >
+                                        + Add Key
+                                    </button>
+                                )}
                                 <button
                                     className="btn btn-sm btn-danger"
                                     onClick={handleResetAll}
@@ -168,11 +170,16 @@ export default function AIControls() {
                                 disabled={isLoading}
                             />
                             <button
-                                className="btn btn-sm"
-                                onClick={() => setShowKeyInput(true)}
-                                disabled={isLoading}
+                                className="btn btn-sm btn-primary"
+                                onClick={() => {
+                                    if (providerConfig.apiKey) {
+                                        saveKey(providerConfig.provider, providerConfig.apiKey.trim(), 'Default');
+                                        setProviderConfig({ apiKey: '' }); // Clear field so rotation uses saved key
+                                    }
+                                }}
+                                disabled={isLoading || !providerConfig.apiKey}
                             >
-                                Save for later
+                                Save Key
                             </button>
                         </div>
                     )}
