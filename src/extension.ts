@@ -7,15 +7,7 @@ export function activate(context: vscode.ExtensionContext) {
     Logger.initialize();
     Logger.info('Git Composer v2 extension activated');
 
-    let gitService: GitService;
-    try {
-        gitService = new GitService();
-    } catch {
-        Logger.warn('No workspace folder found — Git Composer will activate when one is opened.');
-        return;
-    }
-
-    const provider = new CommitComposerProvider(context.extensionUri, gitService);
+    const provider = new CommitComposerProvider(context.extensionUri);
 
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(CommitComposerProvider.viewType, provider)

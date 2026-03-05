@@ -9,14 +9,26 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'commitComposer.sidebarView';
     private _view?: vscode.WebviewView;
     private _extensionUri: vscode.Uri;
-    private orchestrator: Orchestrator;
-    private commitExecutor: CommitExecutor;
+    private _orchestrator?: Orchestrator;
+    private _commitExecutor?: CommitExecutor;
 
-    constructor(extensionUri: vscode.Uri, gitService: GitService) {
+    constructor(extensionUri: vscode.Uri) {
         this._extensionUri = extensionUri;
-        this.orchestrator = new Orchestrator(gitService);
-        this.commitExecutor = new CommitExecutor(gitService);
         Logger.info('CommitComposerProvider: Initialized');
+    }
+
+    private getOrchestrator(): Orchestrator {
+        if (!this._orchestrator) {
+            this._orchestrator = new Orchestrator(new GitService());
+        }
+        return this._orchestrator;
+    }
+
+    private getCommitExecutor(): CommitExecutor {
+        if (!this._commitExecutor) {
+            this._commitExecutor = new CommitExecutor(new GitService());
+        }
+        return this._commitExecutor;
     }
 
     public resolveWebviewView(
@@ -93,7 +105,7 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
     private async loadChanges() {
         if (!this._view) return;
         try {
-            const staged = await this.orchestrator.getStagedChanges();
+            const staged = await this.getOrchestrator().getStagedChanges();
             this._view.webview.postMessage({
                 command: 'dataLoaded',
                 data: { staged }
@@ -112,7 +124,7 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
         try {
             this._view.webview.postMessage({ command: 'composing' });
 
-            const result = await this.orchestrator.compose(providerConfig);
+            const result = await this.getOrchestrator().compose(providerConfig);
 
             this._view.webview.postMessage({
                 command: 'composed',
@@ -131,7 +143,7 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
     private async handleCommitSingle(draft: DraftCommit) {
         if (!this._view) return;
         try {
-            await this.commitExecutor.executeSingle(draft);
+            await this.getCommitExecutor().executeSingle(draft);
             vscode.window.showInformationMessage(`Committed: ${draft.message.split('\n')[0]}`);
             this._view.webview.postMessage({ command: 'commitSuccess', draftId: draft.id });
             await this.loadChanges();
@@ -147,7 +159,7 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
     private async handleCommitAll(drafts: DraftCommit[]) {
         if (!this._view) return;
         try {
-            const results = await this.commitExecutor.executeAll(drafts, (progress) => {
+            const results = await this.getCommitExecutor().executeAll(drafts, (progress) => {
                 this._view?.webview.postMessage({
                     command: 'commitProgress',
                     progress
