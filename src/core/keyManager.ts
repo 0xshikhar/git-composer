@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { Logger } from '../utils/logger';
 
 export interface StoredApiKey {
     key: string;
@@ -19,32 +20,43 @@ export class KeyManager {
         this.context = context;
     }
 
-    private getStorage(): Record<string, ProviderKeys> {
-        return this.context.globalState.get<Record<string, ProviderKeys>>(KeyManager.STORAGE_KEY) || {};
+    private async getStorage(): Promise<Record<string, ProviderKeys>> {
+        try {
+            const raw = await this.context.secrets.get(KeyManager.STORAGE_KEY);
+            if (!raw) return {};
+            return JSON.parse(raw);
+        } catch (e) {
+            Logger.error('Failed to read secure storage', e);
+            return {};
+        }
     }
 
-    private saveStorage(storage: Record<string, ProviderKeys>): void {
-        this.context.globalState.update(KeyManager.STORAGE_KEY, storage);
+    private async saveStorage(storage: Record<string, ProviderKeys>): Promise<void> {
+        try {
+            await this.context.secrets.store(KeyManager.STORAGE_KEY, JSON.stringify(storage));
+        } catch (e) {
+            Logger.error('Failed to write to secure storage', e);
+        }
     }
 
-    getKeys(provider: string): StoredApiKey[] {
-        const storage = this.getStorage();
+    async getKeys(provider: string): Promise<StoredApiKey[]> {
+        const storage = await this.getStorage();
         return storage[provider]?.keys || [];
     }
 
-    getAllProviders(): string[] {
-        const storage = this.getStorage();
+    async getAllProviders(): Promise<string[]> {
+        const storage = await this.getStorage();
         return Object.keys(storage);
     }
 
-    hasKey(provider: string): boolean {
-        const keys = this.getKeys(provider);
+    async hasKey(provider: string): Promise<boolean> {
+        const keys = await this.getKeys(provider);
         return keys.length > 0;
     }
 
-    addKey(provider: string, key: string, label?: string): void {
-        const storage = this.getStorage();
-        
+    async addKey(provider: string, key: string, label?: string): Promise<void> {
+        const storage = await this.getStorage();
+
         if (!storage[provider]) {
             storage[provider] = { keys: [], currentIndex: 0 };
         }
@@ -53,26 +65,26 @@ export class KeyManager {
         const exists = storage[provider].keys.some(k => k.key === key);
         if (!exists) {
             storage[provider].keys.push({ key, label, lastUsed: Date.now() });
-            this.saveStorage(storage);
+            await this.saveStorage(storage);
         }
     }
 
-    removeKey(provider: string, keyIndex: number): void {
-        const storage = this.getStorage();
+    async removeKey(provider: string, keyIndex: number): Promise<void> {
+        const storage = await this.getStorage();
         if (storage[provider] && storage[provider].keys[keyIndex]) {
             storage[provider].keys.splice(keyIndex, 1);
             // Reset index if out of bounds
             if (storage[provider].currentIndex >= storage[provider].keys.length) {
                 storage[provider].currentIndex = 0;
             }
-            this.saveStorage(storage);
+            await this.saveStorage(storage);
         }
     }
 
-    getNextKey(provider: string): string | null {
-        const storage = this.getStorage();
+    async getNextKey(provider: string): Promise<string | null> {
+        const storage = await this.getStorage();
         const providerKeys = storage[provider];
-        
+
         if (!providerKeys || providerKeys.keys.length === 0) {
             return null;
         }
@@ -80,18 +92,18 @@ export class KeyManager {
         // Rotate to next key
         const key = providerKeys.keys[providerKeys.currentIndex];
         providerKeys.currentIndex = (providerKeys.currentIndex + 1) % providerKeys.keys.length;
-        
+
         // Update last used
         key.lastUsed = Date.now();
-        this.saveStorage(storage);
+        await this.saveStorage(storage);
 
         return key.key;
     }
 
-    getCurrentKey(provider: string): string | null {
-        const storage = this.getStorage();
+    async getCurrentKey(provider: string): Promise<string | null> {
+        const storage = await this.getStorage();
         const providerKeys = storage[provider];
-        
+
         if (!providerKeys || providerKeys.keys.length === 0) {
             return null;
         }
@@ -99,23 +111,24 @@ export class KeyManager {
         return providerKeys.keys[providerKeys.currentIndex]?.key || null;
     }
 
-    resetProvider(provider: string): void {
-        const storage = this.getStorage();
+    async resetProvider(provider: string): Promise<void> {
+        const storage = await this.getStorage();
         delete storage[provider];
-        this.saveStorage(storage);
+        await this.saveStorage(storage);
     }
 
-    resetAll(): void {
-        this.saveStorage({});
+    async resetAll(): Promise<void> {
+        await this.saveStorage({});
     }
 
-    getKeyCount(provider: string): number {
-        return this.getKeys(provider).length;
+    async getKeyCount(provider: string): Promise<number> {
+        const keys = await this.getKeys(provider);
+        return keys.length;
     }
 
     // Get all keys as masked for display
-    getKeysForDisplay(provider: string): { label: string; masked: string; lastUsed?: number }[] {
-        const keys = this.getKeys(provider);
+    async getKeysForDisplay(provider: string): Promise<{ label: string; masked: string; lastUsed?: number }[]> {
+        const keys = await this.getKeys(provider);
         return keys.map((k, i) => ({
             label: k.label || `Key ${i + 1}`,
             masked: this.maskKey(k.key),
