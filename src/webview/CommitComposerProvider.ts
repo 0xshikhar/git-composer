@@ -46,11 +46,19 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
         return this._configLoader;
     }
 
+    private getConfigLoader(): ConfigLoader {
+        if (!this._configLoader) {
+            this._configLoader = new ConfigLoader();
+        }
+        return this._configLoader;
+    }
+
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
         _context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken,
     ) {
+        Logger.info('CommitComposerProvider: resolveWebviewView called');
         Logger.info('CommitComposerProvider: resolveWebviewView called');
 
         webviewView.webview.options = {
@@ -70,10 +78,24 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
             }
         });
 
+        this._view = webviewView;
+
+        webviewView.onDidChangeVisibility(() => {
+            Logger.info('CommitComposerProvider: Visibility changed', { visible: webviewView.visible });
+            if (webviewView.visible) {
+                void this.loadChanges();
+            }
+        });
+
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
         Logger.info('CommitComposerProvider: HTML set');
 
+        Logger.info('CommitComposerProvider: HTML set');
+
         this._setWebviewMessageListener(webviewView.webview);
+        if (webviewView.visible) {
+            void this.loadChanges();
+        }
         if (webviewView.visible) {
             void this.loadChanges();
         }
@@ -84,6 +106,7 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
             vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js')
         );
         const nonce = getNonce();
+        const cspSource = webview.cspSource;
         const cspSource = webview.cspSource;
 
         return `<!DOCTYPE html>
@@ -126,8 +149,58 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
                         text-align: center;
                     }
                 </style>
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${cspSource} data:; img-src ${cspSource} data: https:;">
+                <title>OpenGit Composer</title>
+                <style>
+                    body { 
+                        margin: 0; 
+                        padding: 0; 
+                        background-color: #1e1e1e;
+                        color: #cccccc;
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    }
+                    .gc-loading { 
+                        display: flex; 
+                        flex-direction: column;
+                        align-items: center; 
+                        justify-content: center; 
+                        height: 100vh; 
+                        gap: 12px;
+                    }
+                    .gc-loading-spinner {
+                        width: 24px;
+                        height: 24px;
+                        border: 2px solid #3a3d41;
+                        border-top-color: #007acc;
+                        border-radius: 50%;
+                        animation: spin 1s linear infinite;
+                    }
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+                    .gc-error {
+                        padding: 16px;
+                        color: #f85149;
+                        text-align: center;
+                    }
+                </style>
             </head>
             <body>
+                <div id="root">
+                    <div class="gc-loading">
+                        <div class="gc-loading-spinner"></div>
+                        <span>Loading OpenGit Composer...</span>
+                    </div>
+                </div>
+                <script nonce="${nonce}">
+                    window.onerror = function(msg, url, line, col, error) {
+                        const root = document.getElementById('root');
+                        if (root) {
+                            const details = String(msg || 'Unknown error');
+                            root.innerHTML = '<div class="gc-error">Error loading: ' + details + '<br>Line: ' + (line || 'unknown') + '</div>';
+                        }
+                    };
+                </script>
                 <div id="root">
                     <div class="gc-loading">
                         <div class="gc-loading-spinner"></div>
