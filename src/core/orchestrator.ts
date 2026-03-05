@@ -110,20 +110,26 @@ export class Orchestrator {
             model: providerConfig.model,
         });
 
-        const result = await this.aiProvider.analyzeChanges(changes);
+        try {
+            const result = await this.aiProvider.analyzeChanges(changes);
 
-        const drafts: DraftCommit[] = result.groups.map(group => ({
-            id: group.id || uuidv4(),
-            message: group.message,
-            description: group.description,
-            files: group.files,
-            state: 'generated' as const,
-            confidence: group.confidence,
-        }));
+            const drafts: DraftCommit[] = result.groups.map(group => ({
+                id: group.id || uuidv4(),
+                message: group.message,
+                description: group.description,
+                files: group.files,
+                state: 'generated' as const,
+                confidence: group.confidence,
+            }));
 
-        Logger.info('Orchestrator: AI generated drafts', { count: drafts.length });
+            Logger.info('Orchestrator: AI generated drafts', { count: drafts.length });
 
-        return { drafts, reasoning: result.reasoning };
+            return { drafts, reasoning: result.reasoning };
+        } catch (error) {
+            Logger.error('Orchestrator: AI composition failed, falling back to heuristics', error);
+            // Fall back to heuristic grouping instead of throwing
+            return this.composeWithHeuristics(changes, context, config);
+        }
     }
 
     /**
