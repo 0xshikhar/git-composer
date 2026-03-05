@@ -1,62 +1,79 @@
 import { FileChange, RepoContext } from '../types/git';
+import { AIAnalyzeOptions } from './aiProvider';
 
 export class PromptBuilder {
-    static buildGroupingPrompt(changes: FileChange[], context?: RepoContext): string {
-        const filesInfo = changes.map(change => {
-            const truncatedDiff = this.truncateDiff(change.diff, 80);
-            return {
-                path: change.path,
-                type: change.changeType,
-                additions: change.additions,
-                deletions: change.deletions,
-                diff: truncatedDiff
-            };
-        });
+    static buildGroupingPrompt(changes: FileChange[], options: AIAnalyzeOptions = {}): string {
+        const context = options.context;
+        const commitFormat = options.commitFormat || 'conventional';
+        const maxSubjectLength = options.maxSubjectLength || 72;
+        const splitThreshold = options.splitThreshold || 3;
+        const additionalInstructions = (options.additionalInstructions || '').trim();
 
-        let contextBlock = '';
-        if (context) {
-            contextBlock = `
-Repository Context:
-- Repository: ${context.repoName}
-- Branch: ${context.branch}
-- Project Type: ${context.projectType}
-- Recent Commits:
-${context.recentCommits.slice(0, 5).map(c => `  - ${c}`).join('\n')}
+        const filesInfo = changes.map(change => ({
+            path: change.path,
+            changeType: change.changeType,
+            additions: change.additions,
+            deletions: change.deletions,
+            diffExcerpt: this.truncateDiff(change.diff, 60)
+        }));
 
-`;
-        }
+        const contextBlock = this.buildContextBlock(context);
+        const additionalBlock = additionalInstructions
+            ? `\nExtra user instructions:\n${additionalInstructions}\n`
+            : '';
 
-        return `You are an expert at organizing git changes into logical commits. Analyze the following staged changes and group them into semantic commits.
+        return `You are a staff engineer generating a high-quality commit composition plan.
+
+Goal:
+- Group staged files into semantically coherent commits.
+- Produce detailed reasoning and reviewer-friendly summaries.
+- Keep commits atomic and easy to understand.
 
 ${contextBlock}
-Files changed:
-${JSON.stringify(filesInfo)}
+Commit style target:
+- Format mode: ${commitFormat}
+- Max subject length: ${maxSubjectLength}
+- Suggested split threshold: ${splitThreshold}
 
-IMPORTANT: You MUST respond with ONLY valid JSON. No explanations, no markdown, no text before or after. Start your response with { and end with }.
+${additionalBlock}
+Staged files:
+${JSON.stringify(filesInfo, null, 2)}
 
-Required JSON format:
+You MUST output a single valid JSON object and nothing else.
+No markdown, no code fences, no prose outside JSON.
+
+Required JSON schema:
 {
+  "summary": "1-3 sentence overview of the overall change set",
+  "reasoning": "why these groups were chosen and tradeoffs",
   "groups": [
     {
-      "files1.txt", "file2": ["file.js"],
-      "type": "feat",
+      "files": ["exact/path/from/input.ts"],
+      "type": "feat|fix|refactor|docs|style|test|chore|perf|ci|build",
       "scope": "optional-scope",
-      "subject": "short description",
-      "body": "optional detailed explanation",
-      "confidence": 85
+      "subject": "imperative summary without trailing period",
+      "body": "optional multiline body",
+      "confidence": 0,
+      "rationale": "why these files belong together",
+      "impact": "user/dev impact in 1-2 sentences",
+      "verification": [
+        "specific checks a reviewer can run"
+      ],
+      "risks": [
+        "possible regressions or migration concerns"
+      ]
     }
-  ],
-  "reasoning": "brief explanation of grouping decisions"
+  ]
 }
 
-Rules:
-1. Each file path must exactly match one of: ${changes.map(c => `"${c.path}"`).join(', ')}
-2. Use conventional commit types: feat, fix, refactor, docs, style, test, chore, perf, ci, build
-3. confidence is 0-100
-4. Keep subject under 72 characters
-5. Do not omit any files - each file must be in exactly one group
-6. Your response must be valid, parseable JSON
-7. Do NOT use markdown code blocks - return raw JSON only`;
+Hard rules:
+1. Every file must appear exactly once across all groups.
+2. Use exact file paths from input. Do not invent files.
+3. If there is only one logical group, still return one group.
+4. Keep confidence in [0, 100].
+5. Keep subject <= ${maxSubjectLength} chars.
+6. Prefer 2-7 commits unless the change set is clearly atomic.
+7. If unsure, choose safer grouping and explain uncertainty in "reasoning".`;
     }
 
     static buildMessagePrompt(files: FileChange[], context?: RepoContext): string {
@@ -88,6 +105,22 @@ Where:
 - body: optional, explain what and why (not how)
 
 Return only the commit message, no JSON.`;
+    }
+
+    private static buildContextBlock(context?: RepoContext): string {
+        if (!context) return 'Repository context: not provided.\n';
+
+        const recentCommits = context.recentCommits
+            .slice(0, 8)
+            .map(c => `- ${c}`)
+            .join('\n');
+
+        return `Repository context:
+- Repository: ${context.repoName}
+- Branch: ${context.branch}
+- Project Type: ${context.projectType}
+- Recent commits:
+${recentCommits || '- none'}\n`;
     }
 
     private static truncateDiff(diff: string, maxLines: number): string {

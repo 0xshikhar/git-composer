@@ -8,6 +8,10 @@ export interface CommitGroup {
     description?: string;
     files: FileChange[];
     confidence: number;
+    rationale?: string;
+    impact?: string;
+    verificationSteps?: string[];
+    risks?: string[];
 }
 
 export interface DraftCommit {
@@ -17,8 +21,12 @@ export interface DraftCommit {
     files: FileChange[];
     state: CommitState;
     confidence: number;
-    type?: string;   // feat, fix, refactor, etc.
-    scope?: string;  // auth, ui, api, etc.
+    type?: string; // feat, fix, refactor, etc.
+    scope?: string; // auth, ui, api, etc.
+    rationale?: string;
+    impact?: string;
+    verificationSteps?: string[];
+    risks?: string[];
 }
 
 export interface CommitInput {
@@ -29,4 +37,5 @@ export interface CommitInput {
 export interface CommitOutput {
     groups: DraftCommit[];
     reasoning?: string;
+    summary?: string;
 }

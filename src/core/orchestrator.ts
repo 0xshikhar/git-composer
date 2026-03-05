@@ -14,6 +14,7 @@ export interface ComposeProviderConfig {
     apiKey?: string;
     model?: string;
     baseUrl?: string;
+    additionalInstructions?: string;
 }
 
 /**
@@ -37,7 +38,7 @@ export class Orchestrator {
     /**
      * Full pipeline: staged changes → draft commits via AI.
      */
-    async compose(providerConfig?: ComposeProviderConfig): Promise<{ drafts: DraftCommit[]; reasoning?: string }> {
+    async compose(providerConfig?: ComposeProviderConfig): Promise<{ drafts: DraftCommit[]; reasoning?: string; summary?: string }> {
 
         // 1. Get staged changes
         const stagedChanges = await this.gitService.getStagedChanges();
@@ -67,7 +68,13 @@ export class Orchestrator {
     private resolveProviderConfig(
         providerConfig: ComposeProviderConfig,
         config: ComposerConfig
-    ): { provider: string; apiKey: string; model: string; baseUrl?: string } {
+    ): {
+        provider: string;
+        apiKey: string;
+        model: string;
+        baseUrl?: string;
+        additionalInstructions?: string;
+    } {
         const provider = providerConfig.provider || config.provider;
         const apiKey = providerConfig.apiKey || config.apiKey || '';
         const model =
@@ -85,7 +92,13 @@ export class Orchestrator {
             );
         }
 
-        return { provider, apiKey, model, baseUrl };
+        return {
+            provider,
+            apiKey,
+            model,
+            baseUrl,
+            additionalInstructions: providerConfig.additionalInstructions,
+        };
     }
 
     /**
@@ -94,9 +107,15 @@ export class Orchestrator {
     private async composeWithAI(
         changes: FileChange[],
         context: RepoContext,
-        providerConfig: { provider: string; apiKey: string; model: string; baseUrl?: string },
+        providerConfig: {
+            provider: string;
+            apiKey: string;
+            model: string;
+            baseUrl?: string;
+            additionalInstructions?: string;
+        },
         config: ComposerConfig
-    ): Promise<{ drafts: DraftCommit[]; reasoning?: string }> {
+    ): Promise<{ drafts: DraftCommit[]; reasoning?: string; summary?: string }> {
         const aiConfig: AIProviderConfig = {
             apiKey: providerConfig.apiKey,
             model: providerConfig.model,
@@ -111,7 +130,13 @@ export class Orchestrator {
         });
 
         try {
-            const result = await this.aiProvider.analyzeChanges(changes);
+            const result = await this.aiProvider.analyzeChanges(changes, {
+                context,
+                commitFormat: config.commitFormat,
+                maxSubjectLength: config.maxSubjectLength,
+                splitThreshold: config.splitThreshold,
+                additionalInstructions: providerConfig.additionalInstructions,
+            });
 
             const drafts: DraftCommit[] = result.groups.map(group => ({
                 id: group.id || uuidv4(),
@@ -120,11 +145,19 @@ export class Orchestrator {
                 files: group.files,
                 state: 'generated' as const,
                 confidence: group.confidence,
+                rationale: group.rationale,
+                impact: group.impact,
+                verificationSteps: group.verificationSteps,
+                risks: group.risks,
             }));
 
             Logger.info('Orchestrator: AI generated drafts', { count: drafts.length });
 
-            return { drafts, reasoning: result.reasoning };
+            return {
+                drafts,
+                reasoning: result.reasoning,
+                summary: result.summary,
+            };
         } catch (error) {
             Logger.error('Orchestrator: AI composition failed, falling back to heuristics', error);
             // Fall back to heuristic grouping instead of throwing
@@ -139,7 +172,7 @@ export class Orchestrator {
         changes: FileChange[],
         context: RepoContext,
         config: ComposerConfig
-    ): Promise<{ drafts: DraftCommit[]; reasoning?: string }> {
+    ): Promise<{ drafts: DraftCommit[]; reasoning?: string; summary?: string }> {
         const clusters = this.commitSplitter.split(changes);
 
         const drafts: DraftCommit[] = clusters.map(cluster => {
@@ -162,6 +195,7 @@ export class Orchestrator {
         return Promise.resolve({
             drafts,
             reasoning: 'Generated using heuristic file clustering (no AI).',
+            summary: `Prepared ${drafts.length} heuristic draft commit${drafts.length === 1 ? '' : 's'}.`,
         });
     }
 

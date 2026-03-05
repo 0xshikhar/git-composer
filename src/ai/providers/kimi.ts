@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { AIProvider, AIProviderConfig, AIResponse } from '../aiProvider';
+import { AIAnalyzeOptions, AIProvider, AIProviderConfig, AIResponse } from '../aiProvider';
 import { FileChange } from '../../types/git';
 import { PromptBuilder } from '../promptBuilder';
 import { ResponseParser } from '../responseParser';
@@ -17,9 +17,9 @@ export class KimiProvider extends AIProvider {
         Logger.info('KimiProvider initialized', { model: config.model, endpoint: this.endpoint });
     }
 
-    async analyzeChanges(changes: FileChange[]): Promise<AIResponse> {
+    async analyzeChanges(changes: FileChange[], options?: AIAnalyzeOptions): Promise<AIResponse> {
         Logger.info('KimiProvider: Analyzing changes', { fileCount: changes.length });
-        const prompt = PromptBuilder.buildGroupingPrompt(changes);
+        const prompt = PromptBuilder.buildGroupingPrompt(changes, options);
         const response = await this.makeRequest(prompt);
 
         const content = response.choices[0].message.content;

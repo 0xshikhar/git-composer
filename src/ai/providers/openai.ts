@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { AIProvider, AIProviderConfig, AIResponse } from '../aiProvider';
+import { AIAnalyzeOptions, AIProvider, AIProviderConfig, AIResponse } from '../aiProvider';
 import { FileChange } from '../../types/git';
 import { PromptBuilder } from '../promptBuilder';
 import { ResponseParser } from '../responseParser';
@@ -7,48 +7,64 @@ import { Logger } from '../../utils/logger';
 
 export class OpenAIProvider extends AIProvider {
     private readonly endpoint = 'https://api.openai.com/v1/chat/completions';
+    private readonly providerName = 'OpenAI';
 
     constructor(config: AIProviderConfig) {
         super(config);
         Logger.info('OpenAIProvider initialized', { model: config.model });
     }
 
-    async analyzeChanges(changes: FileChange[]): Promise<AIResponse> {
-        Logger.info('OpenAIProvider: Analyzing changes', { fileCount: changes.length });
-        const prompt = PromptBuilder.buildGroupingPrompt(changes);
-        Logger.debug('OpenAIProvider: Built prompt', { promptLength: prompt.length });
+    async analyzeChanges(changes: FileChange[], options?: AIAnalyzeOptions): Promise<AIResponse> {
+        Logger.info(`[${this.providerName}] Analyzing changes`, { fileCount: changes.length });
+        const prompt = PromptBuilder.buildGroupingPrompt(changes, options);
+        
+        const startTime = Date.now();
+        Logger.aiRequest(this.providerName, this.config.model || 'gpt-4o', prompt.length);
 
-        const response = await this.makeRequest(prompt);
+        let response;
+        try {
+            response = await this.makeRequest(prompt);
+        } catch (error) {
+            Logger.aiError(this.providerName, error);
+            throw error;
+        }
 
+        const responseTime = Date.now() - startTime;
+        
         // OpenAI's chat completion format
         const content = response.choices[0].message.content;
+        
+        Logger.aiResponse(this.providerName, 200, content.length, responseTime);
+        Logger.aiRawResponse(content);
+        
         return ResponseParser.parseGroupingResponse(content, changes);
     }
 
     async generateCommitMessage(files: FileChange[]): Promise<string> {
-        Logger.info('OpenAIProvider: Generating commit message', { fileCount: files.length });
+        Logger.info(`[${this.providerName}] Generating commit message`, { fileCount: files.length });
         const prompt = PromptBuilder.buildMessagePrompt(files);
 
         const response = await this.makeRequest(prompt);
-
-        return ResponseParser.parseMessageResponse(
-            response.choices[0].message.content
-        );
+        const content = response.choices[0].message.content;
+        
+        Logger.aiRawResponse(content);
+        
+        return ResponseParser.parseMessageResponse(content);
     }
 
     async validateApiKey(): Promise<boolean> {
         try {
-            Logger.info('OpenAIProvider: Validating API key');
+            Logger.info(`[${this.providerName}] Validating API key`);
             await axios.get('https://api.openai.com/v1/models', {
                 headers: {
                     'Authorization': `Bearer ${this.config.apiKey}`
                 },
                 timeout: 5000
             });
-            Logger.info('OpenAIProvider: API key validation successful');
+            Logger.info(`[${this.providerName}] API key validation successful`);
             return true;
         } catch (error) {
-            Logger.error('OpenAIProvider: API key validation failed', error);
+            Logger.error(`[${this.providerName}] API key validation failed`, error);
             return false;
         }
     }
@@ -56,11 +72,6 @@ export class OpenAIProvider extends AIProvider {
     protected async makeRequest(prompt: string): Promise<any> {
         try {
             const model = this.config.model || 'gpt-4o';
-
-            Logger.debug('OpenAIProvider: Making API request', {
-                model,
-                promptLength: prompt.length
-            });
 
             const requestBody = {
                 model: model,
@@ -79,6 +90,8 @@ export class OpenAIProvider extends AIProvider {
                 response_format: { type: 'json_object' }
             };
 
+            Logger.debug('Request body', { model });
+
             const response = await axios.post(
                 this.endpoint,
                 requestBody,
@@ -91,25 +104,19 @@ export class OpenAIProvider extends AIProvider {
                 }
             );
 
-            Logger.debug('OpenAIProvider: API response received', {
-                status: response.status,
-                contentLength: response.data.choices?.[0]?.message?.content?.length
-            });
-
             return response.data;
         } catch (error) {
             if (axios.isAxiosError(error)) {
-                Logger.error('OpenAIProvider: API request failed', {
+                const errMsg = `OpenAI API Error: ${error.response?.data?.error?.message || error.message}`;
+                Logger.error(`[${this.providerName}] Request failed`, {
                     status: error.response?.status,
                     statusText: error.response?.statusText,
                     data: error.response?.data,
                     message: error.message
                 });
-                throw new Error(
-                    `OpenAI API Error: ${error.response?.data?.error?.message || error.message}`
-                );
+                throw new Error(errMsg);
             }
-            Logger.error('OpenAIProvider: Unexpected error', error);
+            Logger.error(`[${this.providerName}] Unexpected error`, error);
             throw error;
         }
     }

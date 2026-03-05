@@ -4,361 +4,53 @@ import { FileChange } from '../types/git';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../utils/logger';
 
-interface ParsedGroup {
+type ParsedGroup = {
     files: string[];
     type: string;
     scope?: string;
     subject: string;
     body?: string;
     confidence: number;
-}
+    rationale?: string;
+    impact?: string;
+    verification: string[];
+    risks: string[];
+};
+
+type ParsedPayload = {
+    summary?: string;
+    reasoning?: string;
+    groups: ParsedGroup[];
+};
+
+const ALLOWED_TYPES = new Set([
+    'feat',
+    'fix',
+    'refactor',
+    'docs',
+    'style',
+    'test',
+    'chore',
+    'perf',
+    'ci',
+    'build',
+]);
 
 export class ResponseParser {
-    static parseGroupingResponse(
-        response: string,
-        allChanges: FileChange[]
-    ): AIResponse {
-        Logger.debug('Raw AI response', { response: response.substring(0, 1000) });
+    static parseGroupingResponse(response: string, allChanges: FileChange[]): AIResponse {
+        Logger.debug('ResponseParser: Raw AI response', { preview: response.slice(0, 1200) });
 
-        // Try multiple parsing strategies
-        let groups: ParsedGroup[] = [];
-
-        // Strategy 1: Try standard JSON parse
-        try {
-            groups = this.tryJsonParse(response);
-            if (groups.length > 0) {
-                Logger.info('Parsed using JSON strategy');
-                return this.buildResponse(groups, allChanges, response);
-            }
-        } catch (e) {
-            Logger.debug('JSON parse failed, trying text extraction');
+        const parsedPayload = this.tryParsePayload(response);
+        if (parsedPayload && parsedPayload.groups.length > 0) {
+            const composed = this.buildResponse(parsedPayload, allChanges);
+            Logger.info('ResponseParser: Parsed AI response using structured JSON', {
+                groups: composed.groups.length,
+            });
+            return composed;
         }
 
-        // Strategy 2: Extract from text using regex patterns
-        try {
-            groups = this.extractFromText(response, allChanges);
-            if (groups.length > 0) {
-                Logger.info('Parsed using text extraction strategy');
-                return this.buildResponse(groups, allChanges, response);
-            }
-        } catch (e) {
-            Logger.debug('Text extraction failed');
-        }
-
-        // Strategy 3: Fallback - heuristic grouping
-        Logger.info('Using heuristic fallback grouping');
+        Logger.warn('ResponseParser: Falling back to heuristic grouping due to unparseable response');
         return this.fallbackHeuristicGrouping(allChanges);
-    }
-
-    private static tryJsonParse(response: string): ParsedGroup[] {
-        let jsonStr = response.trim();
-        
-        // Remove markdown code blocks
-        jsonStr = jsonStr.replace(/```json\s*/gi, '').replace(/```\s*$/gm, '');
-        jsonStr = jsonStr.replace(/^```\s*/gm, '').replace(/```\s*$/gm, '');
-        
-        // Find JSON object
-        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            jsonStr = jsonMatch[0];
-        }
-
-        // Fix common issues
-        jsonStr = this.aggressiveJsonFix(jsonStr);
-
-        const parsed = JSON.parse(jsonStr);
-        
-        // Extract groups from various structures
-        const groupsArray = parsed.groups || parsed.commits || parsed.results || parsed.items || parsed.data || [];
-        
-        if (!Array.isArray(groupsArray)) {
-            return [];
-        }
-
-        return groupsArray.map((g: any) => ({
-            files: this.extractFilePaths(g.files || g.file || g.paths || []),
-            type: (g.type || g.commitType || 'chore').toLowerCase(),
-            scope: g.scope || g.component,
-            subject: g.subject || g.message || g.title || 'update files',
-            body: g.body || g.description || g.details,
-            confidence: typeof g.confidence === 'number' ? g.confidence : 
-                       typeof g.score === 'number' ? g.score : 75
-        }));
-    }
-
-    private static extractFilePaths(filesData: any): string[] {
-        if (!filesData) return [];
-        if (typeof filesData === 'string') return [filesData];
-        if (!Array.isArray(filesData)) return [];
-        
-        return filesData.map((f: any) => {
-            if (typeof f === 'string') return f;
-            return f?.path || f?.file || f?.name || f?.filename || '';
-        }).filter(Boolean);
-    }
-
-    private static aggressiveJsonFix(jsonStr: string): string {
-        // Remove any text before first { or [
-        const firstBrace = jsonStr.indexOf('{');
-        const firstBracket = jsonStr.indexOf('[');
-        let start = -1;
-        if (firstBrace !== -1 && firstBracket !== -1) {
-            start = Math.min(firstBrace, firstBracket);
-        } else if (firstBrace !== -1) {
-            start = firstBrace;
-        } else if (firstBracket !== -1) {
-            start = firstBracket;
-        }
-        
-        if (start > 0) {
-            jsonStr = jsonStr.substring(start);
-        }
-
-        // Fix common issues
-        jsonStr = jsonStr
-            .replace(/,\s*([}\]])/g, '$1')  // trailing commas
-            .replace(/'/g, '"')  // single quotes
-            .replace(/,\s*}/g, '}')  // comma before }
-            .replace(/,\s*\]/g, ']');  // comma before ]
-
-        // Try to balance braces
-        const opens = (jsonStr.match(/\{/g) || []).length;
-        const closes = (jsonStr.match(/\}/g) || []).length;
-        if (opens > closes) {
-            jsonStr += '}'.repeat(opens - closes);
-        }
-
-        return jsonStr;
-    }
-
-    private static extractFromText(response: string, allChanges: FileChange[]): ParsedGroup[] {
-        const groups: ParsedGroup[] = [];
-        const allFileNames = allChanges.map(f => f.path);
-        
-        // Pattern 1: Look for numbered groups with files listed
-        const groupPatterns = [
-            /(?:group|commit)[\s#]*\d+[:\)]?\s*([^:]+):\s*([^\n]+)/gi,
-            /\{[^}]*"files"[^}]*\[[^\]]*\][^}]*\}/gi,
-            /"type"\s*:\s*"([^"]+)"[^}]*"subject"\s*:\s*"([^"]+)"/gi,
-        ];
-
-        // Extract file mentions from response
-        const mentionedFiles: string[] = [];
-        for (const file of allFileNames) {
-            const fileName = file.split('/').pop() || '';
-            if (response.toLowerCase().includes(fileName.toLowerCase()) || 
-                response.toLowerCase().includes(file.toLowerCase())) {
-                mentionedFiles.push(file);
-            }
-        }
-
-        // Try to find structured commit-like patterns
-        const lines = response.split('\n');
-        let currentGroup: ParsedGroup | null = null;
-
-        for (const line of lines) {
-            // Check for commit type patterns
-            const typeMatch = line.match(/(feat|fix|refactor|docs|style|test|chore|perf|ci|build)(\s*\((\w+)\))?\s*:\s*(.+)/i);
-            
-            if (typeMatch) {
-                if (currentGroup) {
-                    groups.push(currentGroup);
-                }
-                
-                // Find files mentioned near this commit
-                const groupFiles = mentionedFiles.filter(f => 
-                    line.toLowerCase().includes(f.split('/').pop()?.toLowerCase() || '')
-                );
-
-                currentGroup = {
-                    files: groupFiles.length > 0 ? groupFiles : [],
-                    type: typeMatch[1].toLowerCase(),
-                    scope: typeMatch[3],
-                    subject: typeMatch[4].trim(),
-                    confidence: 70
-                };
-            }
-        }
-
-        if (currentGroup) {
-            groups.push(currentGroup);
-        }
-
-        // If we found groups but no files were matched, distribute all files
-        if (groups.length > 0 && groups.every(g => g.files.length === 0)) {
-            const filesPerGroup = Math.ceil(allChanges.length / groups.length);
-            groups.forEach((g, i) => {
-                g.files = allChanges.slice(i * filesPerGroup, (i + 1) * filesPerGroup).map(f => f.path);
-            });
-        }
-
-        return groups;
-    }
-
-    private static fallbackHeuristicGrouping(allChanges: FileChange[]): AIResponse {
-        Logger.info('Using fallback heuristic grouping');
-        
-        // Simple heuristic: group by file type/location
-        const groups: ParsedGroup[] = [];
-        
-        if (allChanges.length === 0) {
-            return { groups: [], reasoning: 'No changes to group' };
-        }
-
-        // If only 1-2 files, put them in one group
-        if (allChanges.length <= 2) {
-            groups.push({
-                files: allChanges.map(f => f.path),
-                type: 'chore',
-                subject: 'update changes',
-                confidence: 80
-            });
-        } else {
-            // Group by common paths
-            const pathParts = allChanges.map(f => f.path.split('/'));
-            const commonPrefix = this.findCommonPrefix(pathParts);
-            
-            // Check if files are in different directories
-            const directories = new Set(pathParts.map(p => p[0]));
-            
-            if (directories.size > 1) {
-                // Group by first directory level
-                const byDir = new Map<string, FileChange[]>();
-                for (const change of allChanges) {
-                    const dir = change.path.split('/')[0];
-                    if (!byDir.has(dir)) {
-                        byDir.set(dir, []);
-                    }
-                    byDir.get(dir)!.push(change);
-                }
-
-                byDir.forEach((files, dir) => {
-                    groups.push({
-                        files: files.map(f => f.path),
-                        type: 'chore',
-                        subject: `update ${dir} directory`,
-                        confidence: 60
-                    });
-                });
-            } else {
-                // All in same directory, split by file type
-                const byType = new Map<string, FileChange[]>();
-                for (const change of allChanges) {
-                    const ext = change.path.split('.').pop() || 'other';
-                    const type = ['ts', 'tsx', 'js', 'jsx'].includes(ext) ? 'src' :
-                                ['css', 'scss', 'less'].includes(ext) ? 'styles' :
-                                ['json', 'yaml', 'yml', 'toml'].includes(ext) ? 'config' : 'other';
-                    if (!byType.has(type)) {
-                        byType.set(type, []);
-                    }
-                    byType.get(type)!.push(change);
-                }
-
-                byType.forEach((files, type) => {
-                    groups.push({
-                        files: files.map(f => f.path),
-                        type: 'chore',
-                        subject: `update ${type} files`,
-                        confidence: 50
-                    });
-                });
-            }
-        }
-
-        return this.buildResponse(groups, allChanges, 'Fallback heuristic grouping');
-    }
-
-    private static findCommonPrefix(paths: string[][]): string {
-        if (paths.length === 0) return '';
-        if (paths.length === 1) return paths[0][0] || '';
-
-        let prefix: string[] = [];
-        for (let i = 0; i < paths[0].length; i++) {
-            const part = paths[0][i];
-            if (paths.every(p => p[i] === part)) {
-                prefix.push(part);
-            } else {
-                break;
-            }
-        }
-        return prefix.join('/');
-    }
-
-    private static buildResponse(groups: ParsedGroup[], allChanges: FileChange[], rawResponse: string): AIResponse {
-        // Match files to groups
-        const commitGroups: CommitGroup[] = groups.map((g, idx) => {
-            // Try to match files
-            let matchedFiles = allChanges.filter(change => {
-                return g.files.some(fp => {
-                    const fpLower = fp.toLowerCase();
-                    const changePathLower = change.path.toLowerCase();
-                    const fileName = change.path.split('/').pop()?.toLowerCase() || '';
-                    return changePathLower === fpLower ||
-                           changePathLower.endsWith(fpLower) ||
-                           fpLower.endsWith(fileName) ||
-                           fileName === fpLower ||
-                           fileName.startsWith(fpLower.replace(/\.[^.]+$/, ''));
-                });
-            });
-
-            // If no files matched, distribute remaining
-            const assignedPaths = new Set(matchedFiles.map(f => f.path));
-            const unassigned = allChanges.filter(f => !assignedPaths.has(f.path));
-            
-            if (matchedFiles.length === 0 && unassigned.length > 0) {
-                const filesPerGroup = Math.ceil(unassigned.length / (groups.length - idx));
-                matchedFiles = unassigned.slice(0, filesPerGroup);
-            }
-
-            const message = this.formatConventionalCommit(
-                g.type,
-                g.scope,
-                g.subject,
-                g.body
-            );
-
-            return {
-                id: uuidv4(),
-                message,
-                description: g.body,
-                files: matchedFiles,
-                confidence: g.confidence
-            };
-        }).filter(g => g.files.length > 0);
-
-        // Ensure all files are assigned
-        const assignedPaths = new Set(commitGroups.flatMap(g => g.files.map(f => f.path)));
-        const unassigned = allChanges.filter(f => !assignedPaths.has(f.path));
-
-        if (unassigned.length > 0) {
-            if (commitGroups.length > 0) {
-                // Add to last group
-                commitGroups[commitGroups.length - 1].files.push(...unassigned);
-            } else {
-                // Create single group with all files
-                commitGroups.push({
-                    id: uuidv4(),
-                    message: 'chore: update changes',
-                    description: 'Auto-grouped changes',
-                    files: unassigned,
-                    confidence: 50
-                });
-            }
-        }
-
-        // Extract reasoning from raw response
-        let reasoning = '';
-        const reasoningMatch = rawResponse.match(/"reasoning"\s*:\s*"([^"]+)"/i);
-        if (reasoningMatch) {
-            reasoning = reasoningMatch[1];
-        }
-
-        Logger.info(`Built ${commitGroups.length} commit groups`);
-
-        return {
-            groups: commitGroups,
-            reasoning
-        };
     }
 
     static parseMessageResponse(response: string): string {
@@ -368,20 +60,330 @@ export class ResponseParser {
             .trim();
     }
 
-    private static formatConventionalCommit(
-        type: string,
-        scope: string | undefined,
-        subject: string,
-        body?: string
-    ): string {
-        let message = type || 'chore';
-        if (scope) {
-            message += `(${scope})`;
+    private static tryParsePayload(response: string): ParsedPayload | null {
+        const cleaned = this.extractLikelyJson(response);
+        const candidates = this.buildJsonCandidates(cleaned);
+
+        for (const candidate of candidates) {
+            try {
+                const parsed = JSON.parse(candidate) as Record<string, unknown>;
+                const groupsSource = this.pickGroupSource(parsed);
+                if (!Array.isArray(groupsSource) || groupsSource.length === 0) continue;
+
+                const groups = groupsSource
+                    .map(group => this.normalizeGroup(group))
+                    .filter((group): group is ParsedGroup => group !== null);
+
+                if (groups.length === 0) continue;
+
+                const summary = this.getString(parsed.summary);
+                const reasoning = this.getString(parsed.reasoning);
+                return { summary, reasoning, groups };
+            } catch {
+                // Try next candidate
+            }
         }
-        message += `: ${subject}`;
-        if (body) {
-            message += `\n\n${body}`;
+
+        return null;
+    }
+
+    private static buildResponse(payload: ParsedPayload, allChanges: FileChange[]): AIResponse {
+        const remaining = new Map<string, FileChange>(
+            allChanges.map(change => [change.path.toLowerCase(), change])
+        );
+
+        const groups: CommitGroup[] = payload.groups.map(parsedGroup => {
+            const files = this.resolveFiles(parsedGroup.files, allChanges, remaining);
+            return {
+                id: uuidv4(),
+                message: this.formatCommitMessage(parsedGroup),
+                description: parsedGroup.body || parsedGroup.rationale,
+                files,
+                confidence: parsedGroup.confidence,
+                rationale: parsedGroup.rationale,
+                impact: parsedGroup.impact,
+                verificationSteps: parsedGroup.verification,
+                risks: parsedGroup.risks,
+            };
+        }).filter(group => group.files.length > 0);
+
+        const leftovers = [...remaining.values()];
+        if (leftovers.length > 0) {
+            if (groups.length > 0) {
+                groups[groups.length - 1].files.push(...leftovers);
+                groups[groups.length - 1].risks = [
+                    ...(groups[groups.length - 1].risks || []),
+                    `Auto-assigned ${leftovers.length} leftover file(s) to preserve full coverage.`,
+                ];
+            } else {
+                groups.push(this.createFallbackGroup(leftovers));
+            }
         }
-        return message;
+
+        return {
+            groups,
+            summary: payload.summary,
+            reasoning: payload.reasoning,
+        };
+    }
+
+    private static fallbackHeuristicGrouping(allChanges: FileChange[]): AIResponse {
+        if (allChanges.length === 0) {
+            return {
+                groups: [],
+                summary: 'No staged changes were available.',
+                reasoning: 'The staged set was empty.',
+            };
+        }
+
+        if (allChanges.length <= 3) {
+            return {
+                groups: [this.createFallbackGroup(allChanges)],
+                summary: 'The staged changes were treated as one atomic commit.',
+                reasoning: 'Small change set, so splitting would likely reduce clarity.',
+            };
+        }
+
+        const byTopFolder = new Map<string, FileChange[]>();
+        for (const change of allChanges) {
+            const topFolder = change.path.split('/')[0] || 'root';
+            if (!byTopFolder.has(topFolder)) byTopFolder.set(topFolder, []);
+            byTopFolder.get(topFolder)!.push(change);
+        }
+
+        const groups: CommitGroup[] = [];
+        for (const [folder, files] of byTopFolder.entries()) {
+            const message = `chore(${folder}): update ${files.length} related file${files.length === 1 ? '' : 's'}`;
+            groups.push({
+                id: uuidv4(),
+                message,
+                description: `Heuristic fallback grouped files under ${folder}.`,
+                files,
+                confidence: 55,
+                rationale: `Files share the same top-level area (${folder}).`,
+                verificationSteps: ['Review staged diff for each file in this group.'],
+                risks: ['Manual review recommended because AI response could not be parsed.'],
+            });
+        }
+
+        return {
+            groups,
+            summary: 'A heuristic fallback grouping was generated.',
+            reasoning: 'The AI response was malformed or empty, so files were grouped by top-level area.',
+        };
+    }
+
+    private static createFallbackGroup(files: FileChange[]): CommitGroup {
+        return {
+            id: uuidv4(),
+            message: 'chore: update staged changes',
+            description: 'Fallback grouping for staged changes.',
+            files,
+            confidence: 60,
+            rationale: 'Single fallback group to guarantee all files are included.',
+            verificationSteps: ['Review grouped files before committing.'],
+            risks: ['This fallback may not reflect ideal semantic grouping.'],
+        };
+    }
+
+    private static normalizeGroup(raw: unknown): ParsedGroup | null {
+        if (!raw || typeof raw !== 'object') return null;
+
+        const source = raw as Record<string, unknown>;
+        const files = this.normalizeFiles(source.files ?? source.paths ?? source.filePaths ?? source.file);
+        if (files.length === 0) return null;
+
+        const type = this.normalizeType(
+            this.getString(source.type) ||
+            this.getString(source.commitType) ||
+            this.getString(source.kind) ||
+            'chore'
+        );
+
+        const scope = this.normalizeScope(
+            this.getString(source.scope) ||
+            this.getString(source.module) ||
+            this.getString(source.area)
+        );
+
+        const subject = this.normalizeSubject(
+            this.getString(source.subject) ||
+            this.getString(source.title) ||
+            this.getString(source.message) ||
+            'update staged changes'
+        );
+
+        const body = this.getString(source.body) || this.getString(source.description);
+        const confidence = this.normalizeConfidence(source.confidence ?? source.score);
+        const rationale = this.getString(source.rationale) || this.getString(source.why);
+        const impact = this.getString(source.impact);
+        const verification = this.normalizeStringArray(source.verification ?? source.checks);
+        const risks = this.normalizeStringArray(source.risks ?? source.risk);
+
+        return {
+            files,
+            type,
+            scope,
+            subject,
+            body,
+            confidence,
+            rationale,
+            impact,
+            verification,
+            risks,
+        };
+    }
+
+    private static resolveFiles(
+        requestedPaths: string[],
+        allChanges: FileChange[],
+        remaining: Map<string, FileChange>
+    ): FileChange[] {
+        const resolved: FileChange[] = [];
+
+        for (const requested of requestedPaths) {
+            const normalized = requested.toLowerCase();
+            const exact = remaining.get(normalized);
+            if (exact) {
+                resolved.push(exact);
+                remaining.delete(normalized);
+                continue;
+            }
+
+            const bySuffix = [...remaining.values()].find(change => {
+                const candidate = change.path.toLowerCase();
+                return candidate.endsWith(`/${normalized}`) || candidate.endsWith(normalized);
+            });
+
+            if (bySuffix) {
+                resolved.push(bySuffix);
+                remaining.delete(bySuffix.path.toLowerCase());
+                continue;
+            }
+
+            const requestedBase = requested.split('/').pop()?.toLowerCase() || '';
+            if (!requestedBase) continue;
+
+            const baseMatches = [...remaining.values()].filter(
+                change => change.path.split('/').pop()?.toLowerCase() === requestedBase
+            );
+
+            if (baseMatches.length === 1) {
+                const matched = baseMatches[0];
+                resolved.push(matched);
+                remaining.delete(matched.path.toLowerCase());
+            }
+        }
+
+        return resolved;
+    }
+
+    private static pickGroupSource(parsed: Record<string, unknown>): unknown[] | null {
+        const candidates: unknown[] = [
+            parsed.groups,
+            parsed.commits,
+            parsed.commitGroups,
+            parsed.items,
+            (parsed.data as Record<string, unknown> | undefined)?.groups,
+        ];
+
+        for (const candidate of candidates) {
+            if (Array.isArray(candidate)) return candidate;
+        }
+        return null;
+    }
+
+    private static buildJsonCandidates(input: string): string[] {
+        const trimmed = input.trim();
+        const candidates = new Set<string>();
+        candidates.add(trimmed);
+        candidates.add(this.repairJson(trimmed));
+
+        const firstBrace = trimmed.indexOf('{');
+        const lastBrace = trimmed.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            const sliced = trimmed.slice(firstBrace, lastBrace + 1);
+            candidates.add(sliced);
+            candidates.add(this.repairJson(sliced));
+        }
+
+        return [...candidates];
+    }
+
+    private static extractLikelyJson(text: string): string {
+        return text
+            .replace(/```json/gi, '')
+            .replace(/```/g, '')
+            .trim();
+    }
+
+    private static repairJson(value: string): string {
+        return value
+            .replace(/[“”]/g, '"')
+            .replace(/[‘’]/g, "'")
+            .replace(/,\s*([}\]])/g, '$1');
+    }
+
+    private static normalizeFiles(raw: unknown): string[] {
+        if (typeof raw === 'string') return [raw.trim()].filter(Boolean);
+        if (!Array.isArray(raw)) return [];
+
+        const results: string[] = [];
+        for (const entry of raw) {
+            if (typeof entry === 'string' && entry.trim()) {
+                results.push(entry.trim());
+                continue;
+            }
+            if (entry && typeof entry === 'object') {
+                const obj = entry as Record<string, unknown>;
+                const path = this.getString(obj.path) || this.getString(obj.file) || this.getString(obj.name);
+                if (path) results.push(path.trim());
+            }
+        }
+        return [...new Set(results)];
+    }
+
+    private static normalizeType(value: string): string {
+        const normalized = value.toLowerCase().replace(/[^a-z]/g, '');
+        return ALLOWED_TYPES.has(normalized) ? normalized : 'chore';
+    }
+
+    private static normalizeScope(value?: string): string | undefined {
+        if (!value) return undefined;
+        const cleaned = value.trim().toLowerCase().replace(/[^a-z0-9\-_/]/g, '');
+        return cleaned || undefined;
+    }
+
+    private static normalizeSubject(value: string): string {
+        const cleaned = value.replace(/\s+/g, ' ').trim().replace(/\.$/, '');
+        if (!cleaned) return 'update staged changes';
+        return cleaned.slice(0, 72);
+    }
+
+    private static normalizeConfidence(value: unknown): number {
+        if (typeof value !== 'number' || Number.isNaN(value)) return 70;
+        return Math.max(0, Math.min(100, Math.round(value)));
+    }
+
+    private static normalizeStringArray(value: unknown): string[] {
+        if (typeof value === 'string' && value.trim()) return [value.trim()];
+        if (!Array.isArray(value)) return [];
+        return value
+            .filter((item): item is string => typeof item === 'string')
+            .map(item => item.trim())
+            .filter(Boolean);
+    }
+
+    private static getString(value: unknown): string | undefined {
+        if (typeof value !== 'string') return undefined;
+        const trimmed = value.trim();
+        return trimmed || undefined;
+    }
+
+    private static formatCommitMessage(group: ParsedGroup): string {
+        const scope = group.scope ? `(${group.scope})` : '';
+        const subject = group.subject || 'update staged changes';
+        const body = group.body?.trim();
+        return body ? `${group.type}${scope}: ${subject}\n\n${body}` : `${group.type}${scope}: ${subject}`;
     }
 }

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { AIProvider, AIProviderConfig, AIResponse } from '../aiProvider';
+import { AIAnalyzeOptions, AIProvider, AIProviderConfig, AIResponse } from '../aiProvider';
 import { FileChange } from '../../types/git';
 import { PromptBuilder } from '../promptBuilder';
 import { ResponseParser } from '../responseParser';
@@ -13,9 +13,9 @@ export class GoogleProvider extends AIProvider {
         Logger.info('GoogleProvider initialized', { model: config.model });
     }
 
-    async analyzeChanges(changes: FileChange[]): Promise<AIResponse> {
+    async analyzeChanges(changes: FileChange[], options?: AIAnalyzeOptions): Promise<AIResponse> {
         Logger.info('GoogleProvider: Analyzing changes', { fileCount: changes.length });
-        const prompt = PromptBuilder.buildGroupingPrompt(changes);
+        const prompt = PromptBuilder.buildGroupingPrompt(changes, options);
         Logger.debug('GoogleProvider: Built prompt', { promptLength: prompt.length });
 
         const response = await this.makeRequest(prompt);

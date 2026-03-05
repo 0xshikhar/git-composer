@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { AIProvider, AIProviderConfig, AIResponse } from '../aiProvider';
+import { AIAnalyzeOptions, AIProvider, AIProviderConfig, AIResponse } from '../aiProvider';
 import { FileChange } from '../../types/git';
 import { PromptBuilder } from '../promptBuilder';
 import { ResponseParser } from '../responseParser';
@@ -7,8 +7,8 @@ import { ResponseParser } from '../responseParser';
 export class AnthropicProvider extends AIProvider {
     private readonly endpoint = 'https://api.anthropic.com/v1/messages';
 
-    async analyzeChanges(changes: FileChange[]): Promise<AIResponse> {
-        const prompt = PromptBuilder.buildGroupingPrompt(changes);
+    async analyzeChanges(changes: FileChange[], options?: AIAnalyzeOptions): Promise<AIResponse> {
+        const prompt = PromptBuilder.buildGroupingPrompt(changes, options);
         const response = await this.makeRequest(prompt);
 
         return ResponseParser.parseGroupingResponse(

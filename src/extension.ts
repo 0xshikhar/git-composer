@@ -5,7 +5,7 @@ import { Logger } from './utils/logger';
 
 export function activate(context: vscode.ExtensionContext) {
     Logger.initialize();
-    Logger.info('OpenGit Composer v2 extension activated');
+    Logger.info('Git Composer extension activated');
 
     const keyManager = new KeyManager(context);
     const provider = new CommitComposerProvider(context.extensionUri, keyManager);
@@ -22,10 +22,17 @@ export function activate(context: vscode.ExtensionContext) {
         }
     );
 
-    context.subscriptions.push(autoComposeCommand);
-    Logger.info('OpenGit Composer v2 commands registered');
+    const showDebugCommand = vscode.commands.registerCommand(
+        'commitComposer.showDebug',
+        () => {
+            Logger.showDebugInfo();
+        }
+    );
+
+    context.subscriptions.push(autoComposeCommand, showDebugCommand);
+    Logger.info('Git Composer commands registered');
 }
 
 export function deactivate() {
-    Logger.info('OpenGit Composer v2 extension deactivated');
+    Logger.info('Git Composer extension deactivated');
 }

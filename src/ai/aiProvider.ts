@@ -1,5 +1,5 @@
 import { CommitGroup } from '../types/commits';
-import { FileChange } from '../types/git';
+import { FileChange, RepoContext } from '../types/git';
 
 export interface AIProviderConfig {
     apiKey: string;
@@ -11,8 +11,17 @@ export interface AIProviderConfig {
 
 export interface AIResponse {
     groups: CommitGroup[];
+    summary?: string;
     reasoning?: string;
     tokensUsed?: number;
+}
+
+export interface AIAnalyzeOptions {
+    context?: RepoContext;
+    commitFormat?: 'conventional' | 'angular' | 'gitmoji' | 'custom';
+    maxSubjectLength?: number;
+    splitThreshold?: number;
+    additionalInstructions?: string;
 }
 
 export abstract class AIProvider {
@@ -22,7 +31,7 @@ export abstract class AIProvider {
         this.config = config;
     }
 
-    abstract analyzeChanges(changes: FileChange[]): Promise<AIResponse>;
+    abstract analyzeChanges(changes: FileChange[], options?: AIAnalyzeOptions): Promise<AIResponse>;
     abstract generateCommitMessage(files: FileChange[]): Promise<string>;
     abstract validateApiKey(): Promise<boolean>;
 
