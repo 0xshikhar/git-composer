@@ -1,58 +1,74 @@
-# Git Commit Composer
+# Git Composer V2
 
-[![Version](https://vsmarketplacebadges.dev/version/undefined_publisher.vscode-commit-composer.png)](https://marketplace.visualstudio.com/items?itemName=undefined_publisher.vscode-commit-composer)
-[![Installs](https://vsmarketplacebadges.dev/installs/undefined_publisher.vscode-commit-composer.png)](https://marketplace.visualstudio.com/items?itemName=undefined_publisher.vscode-commit-composer)
+**Git Composer** is a professional-grade VS Code extension that intelligently groups your staged changes into semantic, atomic commits using AI.
 
-**Git Commit Composer** is a VS Code extension that intelligently groups your staged changes into logical commits using AI. Say goodbye to massive, unstructured commits and let AI help you organize your work.
+Say goodbye to massive, unstructured commits. Let Git Composer act as your personal AI git assistant right from the VS Code sidebar.
 
-## ✨ Features
+![Git Composer V2](https://via.placeholder.com/800x400?text=Git+Composer+V2)
 
-- **🤖 AI-Powered Analysis**: Automatically analyzes staged changes using advanced LLMs (OpenAI, Anthropic, etc.).
-- **🧩 Logical Grouping**: Intelligently groups related file changes into cohesive commit units.
-- **📝 Auto-Generated Messages**: Generates descriptive and semantic commit messages for each group.
-- **👀 Interactive Review**: clearly view staged files, proposed groups, and diffs before committing.
-- **🛠️ Manual Control**: Manually adjust groups or messages if the AI suggestion isn't perfect.
+## ✨ New in V2
 
-## 🚀 Installation
+- **Integrated Sidebar Experience:** Git Composer now lives natively in the VS Code Source Control (SCM) sidebar. No more switching contexts!
+- **Bring Your Own Model:** First-class support for multiple LLMs:
+  - OpenAI (GPT-4o, GPT-4)
+  - Anthropic (Claude 3 Opus/Sonnet/Haiku)
+  - Google (Gemini Pro)
+  - Moonshot (Kimi)
+  - Ollama (Local open-source models!)
+- **Intelligent Splitter Engine:** Advanced heuristic file clustering chunks your changes by domain (`auth`, `api`, `ui`, `core`), generating distinct atomic commits.
+- **GitLens-Quality UI:** A beautiful, responsive dark-themed interactive tree view built with React. Native diff viewer, inline commit editors, and drag-and-drop support.
+- **Batch Execution:** Safely review the AI's structured commit plan and execute them all in sequence with a single click.
+
+## 🚀 Features
+
+- **🤖 AI-Powered Analysis:** Automatically parses git diffs to generate semantic commit groupings and accurate commit messages.
+- **🧩 Logical Grouping:** Even without AI, the heuristic clustering groups related file changes into cohesive commit units.
+- **👀 Interactive Review:** Clearly view staged files, proposed groups, and syntax-highlighted diffs before committing.
+- **🛠️ Manual Control:** Inline editing allows you to tweak the suggested commit message, edit the prefix, and manually combine/split files.
+
+## 📦 Installation
 
 1. Open **VS Code**.
 2. Go to the **Extensions** view (`Cmd+Shift+X` or `Ctrl+Shift+X`).
-3. Search for **Git Commit Composer**.
+3. Search for **Git Composer**.
 4. Click **Install**.
+   _(Currently available via VSIX deployment: `code --install-extension git-composer-v2-0.0.1.vsix`)_
 
 ## 📖 Usage
 
 1. **Stage your changes** in the Source Control view as usual.
-2. Open the Command Palette (`Cmd+Shift+P` or `Ctrl+Shift+P`).
-3. Run the command: **`Commit Composer: Auto Compose`**.
-4. The **Commit Composer Panel** will open, showing your staged changes.
-5. Click **Generate Groups** to let the AI analyze your changes.
-6. Review the suggested commit groups.
-7. Click **Commit** on a group to commit those changes to your repository.
+2. Open the **Git Composer** panel in your left activity bar (or under the Source Control view).
+3. If you have no provider set, use the built-in Settings UI to pick an AI provider and enter your API Key.
+4. Click the **Sparkle / Compose** button to let the AI analyze your staged diffs.
+5. Review the generated **Draft Commits** in the interactive tree.
+6. Click **Commit** on a group, or click **Commit All** to dispatch the queue sequentially.
 
 ## ⚙️ Configuration
 
-You can configure the extension permissions and defaults in VS Code Settings (`Cmd+,`):
+Git Composer is highly customizable. Configure it via VS Code Settings (`Cmd+,`) or a local `.gitcomposer.json` file in your workspace root!
 
-| Setting                     | Description                                            | Default                 |
-| :-------------------------- | :----------------------------------------------------- | :---------------------- |
-| `commitComposer.aiProvider` | Select the AI provider (OpenAI, Anthropic, etc.)       | `openai`                |
-| `commitComposer.apiKey`     | Your API Key for the selected provider                 | `""`                    |
-| `commitComposer.model`      | Specific model to use (e.g., `gpt-4`, `claude-3-opus`) | `""` (provider default) |
+| Setting                           | Description                                                            | Default                  |
+| :-------------------------------- | :--------------------------------------------------------------------- | :----------------------- |
+| `commitComposer.aiProvider`       | Select the AI provider (OpenAI, Anthropic, Gemini, Kimi, Ollama)       | `openai`                 |
+| `commitComposer.apiKey`           | Your API Key for the selected provider                                 | `""`                     |
+| `commitComposer.model`            | Specific model to use (e.g., `gpt-4o`, `claude-3-opus`)                | _provider default_       |
+| `commitComposer.ollamaHost`       | Local host domain when using Ollama                                    | `http://localhost:11434` |
+| `commitComposer.commitFormat`     | Commit message format (`conventional`, `angular`, `gitmoji`, `custom`) | `conventional`           |
+| `commitComposer.maxSubjectLength` | Maximum character length for commit subject line                       | `72`                     |
+| `commitComposer.splitThreshold`   | Number of files above which the splitter groups into multiple commits  | `3`                      |
 
-## 🔑 API Keys
+## 🔑 Your Data & Privacy
 
-To use this extension, you need to provide an API key for your chosen AI provider.
+To use the AI generation, you provide an API key for your chosen cloud provider.
 
-1. Go to **Settings** > **Extensions** > **Git Commit Composer**.
-2. Enter your API key in the `Api Key` field.
+- Your API key is stored securely in your local VS Code settings and never transmitted to our servers.
+- The Git Repository Diff is sent directly to your chosen provider (OpenAI/Anthropic/Google).
+- **100% Privacy Option:** Select **`ollama`** as your provider to keep all code analysis completely offline and local on your machine!
 
-> **Note:** Your API key is stored locally in your VS Code settings and is never shared.
+## 🤝 Contributing & Support
 
-## 🤝 Contributing
+Issues and feature requests are welcome! Feel free to report issues on the repository.
 
-Issues and pull requests are welcome! See our [GitHub Repository](https://github.com/) for more details.
+---
 
-## 📄 License
-
-This project is licensed under the MIT License.
+**Enjoying Git Composer V2?** Leave a review on the marketplace!
