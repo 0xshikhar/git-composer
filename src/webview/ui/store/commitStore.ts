@@ -29,6 +29,12 @@ export interface ProviderConfig {
     baseUrl?: string;
 }
 
+export interface StoredKeyDisplay {
+    label: string;
+    masked: string;
+    lastUsed?: number;
+}
+
 interface CommitStoreState {
     // Data
     stagedFiles: FileChange[];
@@ -46,6 +52,10 @@ interface CommitStoreState {
     // Provider config
     providerConfig: ProviderConfig;
 
+    // Keys management
+    savedKeys: Record<string, StoredKeyDisplay[]>;
+    showKeyInput: boolean;
+
     // View mode
     activeView: 'tree' | 'diff' | 'editor';
 
@@ -60,6 +70,8 @@ interface CommitStoreState {
     setCommitProgress: (progress: { current: number; total: number } | null) => void;
     setProviderConfig: (config: Partial<ProviderConfig>) => void;
     setActiveView: (view: 'tree' | 'diff' | 'editor') => void;
+    setSavedKeys: (provider: string, keys: StoredKeyDisplay[]) => void;
+    setShowKeyInput: (show: boolean) => void;
 
     // Draft manipulation
     updateDraftMessage: (id: string, message: string) => void;
@@ -92,6 +104,8 @@ export const useCommitStore = create<CommitStoreState>((set, get) => ({
         apiKey: '',
         model: '',
     },
+    savedKeys: {},
+    showKeyInput: false,
     activeView: 'tree',
 
     // Setters
@@ -108,6 +122,11 @@ export const useCommitStore = create<CommitStoreState>((set, get) => ({
             providerConfig: { ...state.providerConfig, ...config },
         })),
     setActiveView: (view) => set({ activeView: view }),
+    setSavedKeys: (provider, keys) =>
+        set((state) => ({
+            savedKeys: { ...state.savedKeys, [provider]: keys },
+        })),
+    setShowKeyInput: (show) => set({ showKeyInput: show }),
 
     // Draft manipulation
     updateDraftMessage: (id, message) =>

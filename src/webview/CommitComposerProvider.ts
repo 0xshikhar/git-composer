@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { GitService } from '../core/git/gitService';
 import { Orchestrator, ComposeProviderConfig } from '../core/orchestrator';
+import { Orchestrator, ComposeProviderConfig } from '../core/orchestrator';
 import { CommitExecutor } from '../core/commitExecutor';
 import { ConfigLoader } from '../core/configLoader';
 import { DraftCommit } from '../types/commits';
@@ -14,9 +15,14 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
     private _commitExecutor?: CommitExecutor;
     private _configLoader?: ConfigLoader;
 
-    constructor(extensionUri: vscode.Uri) {
+    constructor(extensionUri: vscode.Uri, keyManager?: KeyManager) {
         this._extensionUri = extensionUri;
+        this._keyManager = keyManager;
         Logger.info('CommitComposerProvider: Initialized');
+    }
+
+    public setKeyManager(keyManager: KeyManager) {
+        this._keyManager = keyManager;
     }
 
     private getOrchestrator(): Orchestrator {
@@ -151,8 +157,24 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
                     await this.loadChanges();
                     break;
 
+                case 'loadKeys':
+                    await this.handleLoadKeys(message.provider, webview);
+                    break;
+
+                case 'saveKey':
+                    await this.handleSaveKey(message.provider, message.key, message.label, webview);
+                    break;
+
+                case 'removeKey':
+                    await this.handleRemoveKey(message.provider, message.keyIndex, webview);
+                    break;
+
+                case 'resetKeys':
+                    await this.handleResetKeys(message.provider, webview);
+                    break;
+
                 case 'compose':
-                    await this.handleCompose(message.providerConfig);
+                    await this.handleComposeWithKeyRotation(message.providerConfig);
                     break;
 
                 case 'commitSingle':
@@ -165,6 +187,10 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
 
                 case 'refresh':
                     await this.loadChanges();
+                    break;
+
+                default:
+                    Logger.warn('CommitComposerProvider: Unknown message command', { command: message.command });
                     break;
 
                 default:

@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from 'react';
+import { useCommitStore, StoredKeyDisplay } from '../store/commitStore';
 
 interface VSCodeAPI {
     postMessage: (msg: any) => void;
@@ -30,6 +31,7 @@ function getVSCodeAPI(): VSCodeAPI {
  */
 export function useVSCodeAPI() {
     const api = getVSCodeAPI();
+    const { setSavedKeys } = useCommitStore();
 
     const postMessage = useCallback((command: string, data?: any) => {
         api.postMessage({ command, ...data });
@@ -37,11 +39,44 @@ export function useVSCodeAPI() {
 
     const onMessage = useCallback((handler: (message: any) => void) => {
         const listener = (event: MessageEvent) => {
-            handler(event.data);
+            const msg = event.data;
+            
+            // Handle key management messages automatically
+            if (msg.command === 'keysLoaded' && msg.keys) {
+                setSavedKeys(msg.provider, msg.keys);
+            }
+            if (msg.command === 'keySaved' && msg.keys) {
+                setSavedKeys(msg.provider, msg.keys);
+            }
+            if (msg.command === 'keyRemoved' && msg.keys) {
+                setSavedKeys(msg.provider, msg.keys);
+            }
+            if (msg.command === 'keysReset') {
+                setSavedKeys(msg.provider, []);
+            }
+            
+            handler(msg);
         };
         window.addEventListener('message', listener);
         return () => window.removeEventListener('message', listener);
-    }, []);
+    }, [setSavedKeys]);
 
-    return { postMessage, onMessage, api };
+    // Helper functions for key management
+    const loadKeys = useCallback((provider: string) => {
+        postMessage('loadKeys', { provider });
+    }, [postMessage]);
+
+    const saveKey = useCallback((provider: string, key: string, label?: string) => {
+        postMessage('saveKey', { provider, key, label });
+    }, [postMessage]);
+
+    const removeKey = useCallback((provider: string, keyIndex: number) => {
+        postMessage('removeKey', { provider, keyIndex });
+    }, [postMessage]);
+
+    const resetKeys = useCallback((provider: string) => {
+        postMessage('resetKeys', { provider });
+    }, [postMessage]);
+
+    return { postMessage, onMessage, api, loadKeys, saveKey, removeKey, resetKeys };
 }

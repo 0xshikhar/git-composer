@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCommitStore } from '../store/commitStore';
+import { useVSCodeAPI } from '../hooks/useVSCodeAPI';
 
 const PROVIDERS = [
     { value: 'openai', label: 'OpenAI', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'] },
@@ -10,10 +11,44 @@ const PROVIDERS = [
 ];
 
 export default function AIControls() {
-    const { providerConfig, setProviderConfig, isLoading } = useCommitStore();
+    const { providerConfig, setProviderConfig, isLoading, savedKeys, showKeyInput, setShowKeyInput } = useCommitStore();
+    const { loadKeys, saveKey, removeKey, resetKeys } = useVSCodeAPI();
+    const [newKey, setNewKey] = useState('');
+    const [newKeyLabel, setNewKeyLabel] = useState('');
 
     const selectedProvider = PROVIDERS.find(p => p.value === providerConfig.provider) || PROVIDERS[0];
     const isLocal = providerConfig.provider === 'ollama';
+    const keys = savedKeys[providerConfig.provider] || [];
+    const hasKeys = keys.length > 0;
+
+    useEffect(() => {
+        loadKeys(providerConfig.provider);
+    }, [providerConfig.provider]);
+
+    const handleProviderChange = (provider: string) => {
+        setProviderConfig({ provider, model: '', apiKey: '' });
+        setShowKeyInput(false);
+        setNewKey('');
+        setNewKeyLabel('');
+    };
+
+    const handleSaveKey = () => {
+        if (!newKey.trim()) return;
+        saveKey(providerConfig.provider, newKey.trim(), newKeyLabel.trim() || undefined);
+        setNewKey('');
+        setNewKeyLabel('');
+        setShowKeyInput(false);
+    };
+
+    const handleRemoveKey = (index: number) => {
+        removeKey(providerConfig.provider, index);
+    };
+
+    const handleResetAll = () => {
+        if (confirm('Are you sure you want to remove all saved API keys for this provider?')) {
+            resetKeys(providerConfig.provider);
+        }
+    };
 
     return (
         <div className="ai-controls">
@@ -26,7 +61,7 @@ export default function AIControls() {
                 <select
                     className="ai-select"
                     value={providerConfig.provider}
-                    onChange={(e) => setProviderConfig({ provider: e.target.value, model: '' })}
+                    onChange={(e) => handleProviderChange(e.target.value)}
                     disabled={isLoading}
                 >
                     {PROVIDERS.map(p => (
@@ -36,17 +71,112 @@ export default function AIControls() {
             </div>
 
             {!isLocal && (
-                <div className="ai-control-row">
-                    <label className="ai-label">API Key</label>
-                    <input
-                        type="password"
-                        className="ai-input"
-                        value={providerConfig.apiKey}
-                        onChange={(e) => setProviderConfig({ apiKey: e.target.value })}
-                        placeholder="Enter API Key"
-                        disabled={isLoading}
-                    />
-                </div>
+                <>
+                    {/* Saved Keys Display */}
+                    {hasKeys && !showKeyInput && (
+                        <div className="ai-control-row">
+                            <label className="ai-label">Saved Keys</label>
+                            <div className="saved-keys-list">
+                                {keys.map((key, idx) => (
+                                    <div key={idx} className="saved-key-item">
+                                        <span className="key-masked">{key.masked}</span>
+                                        <button
+                                            className="btn-remove-key"
+                                            onClick={() => handleRemoveKey(idx)}
+                                            title="Remove this key"
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                ))}
+                                {providerConfig.provider === 'gemini' && keys.length > 1 && (
+                                    <div className="key-rotation-hint">
+                                        🔄 Keys will rotate on each compose
+                                    </div>
+                                )}
+                            </div>
+                            <div className="key-actions">
+                                <button
+                                    className="btn btn-sm"
+                                    onClick={() => setShowKeyInput(true)}
+                                >
+                                    + Add Key
+                                </button>
+                                <button
+                                    className="btn btn-sm btn-danger"
+                                    onClick={handleResetAll}
+                                >
+                                    Reset All
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Add Key Input */}
+                    {showKeyInput && (
+                        <div className="ai-control-row key-input-section">
+                            <label className="ai-label">Add New Key</label>
+                            <input
+                                type="password"
+                                className="ai-input"
+                                value={newKey}
+                                onChange={(e) => setNewKey(e.target.value)}
+                                placeholder="Enter API Key"
+                                disabled={isLoading}
+                                autoFocus
+                            />
+                            <input
+                                type="text"
+                                className="ai-input"
+                                value={newKeyLabel}
+                                onChange={(e) => setNewKeyLabel(e.target.value)}
+                                placeholder="Label (optional, e.g., 'Work')"
+                                disabled={isLoading}
+                            />
+                            <div className="key-input-actions">
+                                <button
+                                    className="btn btn-sm btn-primary"
+                                    onClick={handleSaveKey}
+                                    disabled={!newKey.trim() || isLoading}
+                                >
+                                    Save
+                                </button>
+                                <button
+                                    className="btn btn-sm"
+                                    onClick={() => {
+                                        setShowKeyInput(false);
+                                        setNewKey('');
+                                        setNewKeyLabel('');
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* No keys saved - show input */}
+                    {!hasKeys && !showKeyInput && (
+                        <div className="ai-control-row">
+                            <label className="ai-label">API Key</label>
+                            <input
+                                type="password"
+                                className="ai-input"
+                                value={providerConfig.apiKey}
+                                onChange={(e) => setProviderConfig({ apiKey: e.target.value })}
+                                placeholder="Enter API Key"
+                                disabled={isLoading}
+                            />
+                            <button
+                                className="btn btn-sm"
+                                onClick={() => setShowKeyInput(true)}
+                                disabled={isLoading}
+                            >
+                                Save for later
+                            </button>
+                        </div>
+                    )}
+                </>
             )}
 
             {isLocal && (
