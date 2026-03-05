@@ -3,7 +3,7 @@ import { FileChange, RepoContext } from '../types/git';
 export class PromptBuilder {
     static buildGroupingPrompt(changes: FileChange[], context?: RepoContext): string {
         const filesInfo = changes.map(change => {
-            const truncatedDiff = this.truncateDiff(change.diff, 100);
+            const truncatedDiff = this.truncateDiff(change.diff, 80);
             return {
                 path: change.path,
                 type: change.changeType,
@@ -26,33 +26,37 @@ ${context.recentCommits.slice(0, 5).map(c => `  - ${c}`).join('\n')}
 `;
         }
 
-        return `Analyze these git changes and group them into logical commits.
+        return `You are an expert at organizing git changes into logical commits. Analyze the following staged changes and group them into semantic commits.
+
 ${contextBlock}
 Files changed:
-${JSON.stringify(filesInfo, null, 2)}
+${JSON.stringify(filesInfo)}
 
-Requirements:
-1. Group related changes together (e.g., feature files, bug fixes, refactoring)
-2. Keep commits focused and atomic
-3. Separate unrelated changes
-4. Follow conventional commit format
-5. Consider file dependencies and relationships
-6. Assign a confidence score (0-100) for each grouping
+IMPORTANT: You MUST respond with ONLY valid JSON. No explanations, no markdown, no text before or after. Start your response with { and end with }.
 
-Return a JSON object with this structure:
+Required JSON format:
 {
   "groups": [
     {
-      "files": ["path1", "path2"],
-      "type": "feat|fix|refactor|docs|style|test|chore",
-      "scope": "optional scope",
+      "files1.txt", "file2": ["file.js"],
+      "type": "feat",
+      "scope": "optional-scope",
       "subject": "short description",
-      "body": "detailed explanation (optional)",
-      "confidence": 0-100
+      "body": "optional detailed explanation",
+      "confidence": 85
     }
   ],
-  "reasoning": "Explanation of grouping decisions"
-}`;
+  "reasoning": "brief explanation of grouping decisions"
+}
+
+Rules:
+1. Each file path must exactly match one of: ${changes.map(c => `"${c.path}"`).join(', ')}
+2. Use conventional commit types: feat, fix, refactor, docs, style, test, chore, perf, ci, build
+3. confidence is 0-100
+4. Keep subject under 72 characters
+5. Do not omit any files - each file must be in exactly one group
+6. Your response must be valid, parseable JSON
+7. Do NOT use markdown code blocks - return raw JSON only`;
     }
 
     static buildMessagePrompt(files: FileChange[], context?: RepoContext): string {

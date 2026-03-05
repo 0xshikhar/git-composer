@@ -67,19 +67,17 @@ export class OpenAIProvider extends AIProvider {
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are an expert at analyzing code changes and organizing them into logical commits.'
+                        content: 'You are an expert at organizing code changes into git commits. You MUST respond with ONLY valid JSON. Never use markdown code blocks.'
                     },
                     {
                         role: 'user',
                         content: prompt
                     }
                 ],
-                temperature: this.config.temperature || 0.3,
-                max_tokens: this.config.maxTokens || 2000,
+                temperature: this.config.temperature || 0.2,
+                max_tokens: this.config.maxTokens || 4000,
                 response_format: { type: 'json_object' }
             };
-
-            Logger.debug('OpenAIProvider: Request body', requestBody);
 
             const response = await axios.post(
                 this.endpoint,
@@ -89,13 +87,13 @@ export class OpenAIProvider extends AIProvider {
                         'Authorization': `Bearer ${this.config.apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 30000
+                    timeout: 60000
                 }
             );
 
             Logger.debug('OpenAIProvider: API response received', {
                 status: response.status,
-                data: response.data
+                contentLength: response.data.choices?.[0]?.message?.content?.length
             });
 
             return response.data;
