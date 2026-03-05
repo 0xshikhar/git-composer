@@ -101,7 +101,7 @@ export default function App() {
         <div className="git-composer">
             {/* Header */}
             <div className="gc-header">
-                <h2 className="gc-title">Git Composer</h2>
+                <h2 className="gc-title">OpenGit Composer</h2>
                 <button className="btn btn-icon" onClick={handleRefresh} title="Refresh">↻</button>
             </div>
 

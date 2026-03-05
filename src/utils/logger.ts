@@ -12,7 +12,7 @@ export class Logger {
         try {
             // eslint-disable-next-line @typescript-eslint/no-var-requires
             const vscode = require('vscode');
-            this.outputChannel = vscode.window.createOutputChannel('Git Composer');
+            this.outputChannel = vscode.window.createOutputChannel('OpenGit Composer');
         } catch {
             // In a pure Node.js / test context vscode does not exist — use a console shim
             this.outputChannel = {

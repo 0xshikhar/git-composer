@@ -1,11 +1,10 @@
 import * as vscode from 'vscode';
-import { GitService } from './core/git/gitService';
 import { CommitComposerProvider } from './webview/CommitComposerProvider';
 import { Logger } from './utils/logger';
 
 export function activate(context: vscode.ExtensionContext) {
     Logger.initialize();
-    Logger.info('Git Composer v2 extension activated');
+    Logger.info('OpenGit Composer v2 extension activated');
 
     const provider = new CommitComposerProvider(context.extensionUri);
 

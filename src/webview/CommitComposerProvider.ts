@@ -58,17 +58,65 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
             vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js')
         );
         const nonce = getNonce();
+        const cspSource = webview.cspSource;
 
         return `<!DOCTYPE html>
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
-                <title>Git Composer</title>
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${cspSource} data:; img-src ${cspSource} data: https:;">
+                <title>OpenGit Composer</title>
+                <style>
+                    body { 
+                        margin: 0; 
+                        padding: 0; 
+                        background-color: #1e1e1e;
+                        color: #cccccc;
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    }
+                    .gc-loading { 
+                        display: flex; 
+                        flex-direction: column;
+                        align-items: center; 
+                        justify-content: center; 
+                        height: 100vh; 
+                        gap: 12px;
+                    }
+                    .gc-loading-spinner {
+                        width: 24px;
+                        height: 24px;
+                        border: 2px solid #3a3d41;
+                        border-top-color: #007acc;
+                        border-radius: 50%;
+                        animation: spin 1s linear infinite;
+                    }
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+                    .gc-error {
+                        padding: 16px;
+                        color: #f85149;
+                        text-align: center;
+                    }
+                </style>
             </head>
             <body>
-                <div id="root"></div>
+                <div id="root">
+                    <div class="gc-loading">
+                        <div class="gc-loading-spinner"></div>
+                        <span>Loading OpenGit Composer...</span>
+                    </div>
+                </div>
+                <script nonce="${nonce}">
+                    window.onerror = function(msg, url, line, col, error) {
+                        const root = document.getElementById('root');
+                        if (root) {
+                            const details = String(msg || 'Unknown error');
+                            root.innerHTML = '<div class="gc-error">Error loading: ' + details + '<br>Line: ' + (line || 'unknown') + '</div>';
+                        }
+                    };
+                </script>
                 <script nonce="${nonce}" src="${scriptUri}"></script>
             </body>
             </html>`;

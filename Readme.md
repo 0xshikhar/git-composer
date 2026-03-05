@@ -1,14 +1,14 @@
-# Git Composer V2
+# OpenGit Composer V2
 
-**Git Composer** is a VS Code extension that intelligently groups your staged changes into semantic, atomic commits using AI.
+**OpenGit Composer** is a VS Code extension that intelligently groups your staged changes into semantic, atomic commits using AI.
 
-Say goodbye to massive, unstructured commits. Let Git Composer act as your personal AI git assistant right from the VS Code sidebar.
+Say goodbye to massive, unstructured commits. Let OpenGit Composer act as your personal AI git assistant right from the VS Code sidebar.
 
-![Git Composer V2](https://via.placeholder.com/800x400?text=Git+Composer+V2)
+![OpenGit Composer V2](https://via.placeholder.com/800x400?text=Git+Composer+V2)
 
 ## ✨ New in V2
 
-- **Integrated Sidebar Experience:** Git Composer now lives natively in the VS Code Source Control (SCM) sidebar. No more switching contexts!
+- **Integrated Sidebar Experience:** OpenGit Composer now lives natively in the VS Code Source Control (SCM) sidebar. No more switching contexts!
 - **Bring Your Own Model:** First-class support for multiple LLMs:
   - OpenAI (GPT-4o, GPT-4)
   - Anthropic (Claude 3 Opus/Sonnet/Haiku)
@@ -30,14 +30,14 @@ Say goodbye to massive, unstructured commits. Let Git Composer act as your perso
 
 1. Open **VS Code**.
 2. Go to the **Extensions** view (`Cmd+Shift+X` or `Ctrl+Shift+X`).
-3. Search for **Git Composer**.
+3. Search for **OpenGit Composer**.
 4. Click **Install**.
    _(Currently available via VSIX deployment: `code --install-extension git-composer-v2-0.0.1.vsix`)_
 
 ## 📖 Usage
 
 1. **Stage your changes** in the Source Control view as usual.
-2. Open the **Git Composer** panel in your left activity bar (or under the Source Control view).
+2. Open the **OpenGit Composer** panel in your left activity bar (or under the Source Control view).
 3. If you have no provider set, use the built-in Settings UI to pick an AI provider and enter your API Key.
 4. Click the **Sparkle / Compose** button to let the AI analyze your staged diffs.
 5. Review the generated **Draft Commits** in the interactive tree.
@@ -45,7 +45,7 @@ Say goodbye to massive, unstructured commits. Let Git Composer act as your perso
 
 ## ⚙️ Configuration
 
-Git Composer is highly customizable. Configure it via VS Code Settings (`Cmd+,`) or a local `.gitcomposer.json` file in your workspace root!
+OpenGit Composer is highly customizable. Configure it via VS Code Settings (`Cmd+,`) or a local `.gitcomposer.json` file in your workspace root!
 
 | Setting                           | Description                                                            | Default                  |
 | :-------------------------------- | :--------------------------------------------------------------------- | :----------------------- |
@@ -71,4 +71,4 @@ Issues and feature requests are welcome! Feel free to report issues on the repos
 
 ---
 
-**Enjoying Git Composer V2?** Leave a review on the marketplace!
+**Enjoying OpenGit Composer V2?** Leave a review on the marketplace!

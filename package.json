@@ -1,7 +1,7 @@
 {
   "name": "vscode-commit-composer",
   "displayName": "Git Commit Composer",
-  "description": "Professional AI-Powered Git Composer. Intelligently group your staged changes into semantic commits.",
+  "description": "Professional AI-Powered OpenGit Composer. Intelligently group your staged changes into semantic commits.",
   "publisher": "0xshikhar",
   "publisherName": "0xshikhar",
   "publisherWebsite": "https://shikhar.xyz",
@@ -45,7 +45,7 @@
       }
     ],
     "configuration": {
-      "title": "Git Composer",
+      "title": "OpenGit Composer",
       "properties": {
         "commitComposer.aiProvider": {
           "type": "string",
