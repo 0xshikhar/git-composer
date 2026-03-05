@@ -24,6 +24,7 @@ export default function App() {
         setError,
         setCommitProgress,
         markCommitted,
+        setProviderConfig,
         setActiveView,
     } = useCommitStore();
 
@@ -35,6 +36,9 @@ export default function App() {
             switch (message.command) {
                 case 'dataLoaded':
                     setStagedFiles(message.data.staged || []);
+                    if (message.data.providerConfig) {
+                        setProviderConfig(message.data.providerConfig);
+                    }
                     break;
 
                 case 'composing':
@@ -77,10 +81,6 @@ export default function App() {
     }, []);
 
     const handleCompose = () => {
-        if (!providerConfig.apiKey && providerConfig.provider !== 'ollama') {
-            setError('Please enter an API key for the selected provider.');
-            return;
-        }
         setError(null);
         postMessage('compose', { providerConfig });
     };

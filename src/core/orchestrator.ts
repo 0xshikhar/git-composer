@@ -1,17 +1,20 @@
-import * as vscode from 'vscode';
 import { GitService } from './git/gitService';
-import { DiffParser } from './parser/diffParser';
-import { FileClassifier } from './parser/fileClassifier';
 import { CommitSplitter } from './commit/commitSplitter';
 import { CommitExecutor, CommitProgress, ProgressCallback } from './commitExecutor';
 import { AIProviderFactory } from '../ai/aiProviderFactory';
 import { AIProvider, AIProviderConfig } from '../ai/aiProvider';
-import { PromptBuilder } from '../ai/promptBuilder';
 import { DraftCommit } from '../types/commits';
 import { FileChange, RepoContext } from '../types/git';
 import { ConfigLoader, ComposerConfig } from './configLoader';
 import { Logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
+
+export interface ComposeProviderConfig {
+    provider: string;
+    apiKey?: string;
+    model?: string;
+    baseUrl?: string;
+}
 
 /**
  * Orchestrator — coordinates the full pipeline:
@@ -34,12 +37,7 @@ export class Orchestrator {
     /**
      * Full pipeline: staged changes → draft commits via AI.
      */
-    async compose(providerConfig?: {
-        provider: string;
-        apiKey: string;
-        model: string;
-        baseUrl?: string;
-    }): Promise<{ drafts: DraftCommit[]; reasoning?: string }> {
+    async compose(providerConfig?: ComposeProviderConfig): Promise<{ drafts: DraftCommit[]; reasoning?: string }> {
 
         // 1. Get staged changes
         const stagedChanges = await this.gitService.getStagedChanges();
@@ -55,13 +53,39 @@ export class Orchestrator {
         // 3. Load config
         const config = this.configLoader.getConfig();
 
-        // 4. If we have an AI provider, use it for intelligent grouping
+        // 4. If we have an AI provider request, use it for intelligent grouping.
+        //    Settings are used as fallback for unset fields.
         if (providerConfig) {
-            return this.composeWithAI(stagedChanges, context, providerConfig, config);
+            const resolvedProviderConfig = this.resolveProviderConfig(providerConfig, config);
+            return this.composeWithAI(stagedChanges, context, resolvedProviderConfig, config);
         }
 
         // 5. Fallback: use heuristic splitter only
         return this.composeWithHeuristics(stagedChanges, context, config);
+    }
+
+    private resolveProviderConfig(
+        providerConfig: ComposeProviderConfig,
+        config: ComposerConfig
+    ): { provider: string; apiKey: string; model: string; baseUrl?: string } {
+        const provider = providerConfig.provider || config.provider;
+        const apiKey = providerConfig.apiKey || config.apiKey || '';
+        const model =
+            providerConfig.model ||
+            config.model ||
+            AIProviderFactory.getDefaultModel(provider);
+        const baseUrl =
+            providerConfig.baseUrl ||
+            config.baseUrl ||
+            (provider === 'ollama' ? config.ollamaHost : undefined);
+
+        if (provider !== 'ollama' && !apiKey) {
+            throw new Error(
+                `No API key configured for ${provider}. Set commitComposer.apiKey in Settings or enter it in the OpenGit Composer panel.`
+            );
+        }
+
+        return { provider, apiKey, model, baseUrl };
     }
 
     /**

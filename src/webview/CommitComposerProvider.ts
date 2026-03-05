@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { GitService } from '../core/git/gitService';
-import { Orchestrator } from '../core/orchestrator';
+import { Orchestrator, ComposeProviderConfig } from '../core/orchestrator';
 import { CommitExecutor } from '../core/commitExecutor';
+import { ConfigLoader } from '../core/configLoader';
 import { DraftCommit } from '../types/commits';
 import { Logger } from '../utils/logger';
 
@@ -11,6 +12,7 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
     private _extensionUri: vscode.Uri;
     private _orchestrator?: Orchestrator;
     private _commitExecutor?: CommitExecutor;
+    private _configLoader?: ConfigLoader;
 
     constructor(extensionUri: vscode.Uri) {
         this._extensionUri = extensionUri;
@@ -31,12 +33,19 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
         return this._commitExecutor;
     }
 
+    private getConfigLoader(): ConfigLoader {
+        if (!this._configLoader) {
+            this._configLoader = new ConfigLoader();
+        }
+        return this._configLoader;
+    }
+
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
         _context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken,
     ) {
-        this._view = webviewView;
+        Logger.info('CommitComposerProvider: resolveWebviewView called');
 
         webviewView.webview.options = {
             enableScripts: true,
@@ -146,28 +155,50 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
                 case 'refresh':
                     await this.loadChanges();
                     break;
+
+                default:
+                    Logger.warn('CommitComposerProvider: Unknown message command', { command: message.command });
+                    break;
             }
         });
     }
 
     private async loadChanges() {
-        if (!this._view) return;
+        if (!this._view) {
+            Logger.warn('CommitComposerProvider: loadChanges called but view is undefined');
+            return;
+        }
         try {
+            Logger.info('CommitComposerProvider: Loading staged changes...');
             const staged = await this.getOrchestrator().getStagedChanges();
-            this._view.webview.postMessage({
+            const config = this.getConfigLoader().getConfig();
+            const providerConfig = {
+                provider: config.provider,
+                model: config.model,
+                ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+                ...(config.provider === 'ollama' && !config.baseUrl ? { baseUrl: config.ollamaHost } : {})
+            };
+            Logger.info('CommitComposerProvider: Staged changes loaded', { count: staged.length });
+
+            const sent = await this._view.webview.postMessage({
                 command: 'dataLoaded',
-                data: { staged }
+                data: { staged, providerConfig }
             });
+            Logger.info('CommitComposerProvider: Message sent to webview', { success: sent });
         } catch (e) {
             Logger.error('CommitComposerProvider: Failed to load changes', e);
-            this._view.webview.postMessage({
-                command: 'error',
-                message: (e as Error).message
-            });
+            try {
+                this._view.webview.postMessage({
+                    command: 'error',
+                    message: (e as Error).message
+                });
+            } catch (postError) {
+                Logger.error('CommitComposerProvider: Failed to send error message', postError);
+            }
         }
     }
 
-    private async handleCompose(providerConfig: any) {
+    private async handleCompose(providerConfig?: ComposeProviderConfig) {
         if (!this._view) return;
         try {
             this._view.webview.postMessage({ command: 'composing' });
