@@ -19,13 +19,22 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "commitComposerContainer",
+          "title": "Git Composer",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
     "views": {
-      "scm": [
+      "commitComposerContainer": [
         {
           "type": "webview",
           "id": "commitComposer.sidebarView",
-          "name": "Git Composer",
-          "icon": "$(git-commit)"
+          "name": "Composer Panel",
+          "icon": "$(sparkle)"
         }
       ]
     },
