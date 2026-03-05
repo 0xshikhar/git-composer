@@ -16,14 +16,17 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onView:commitComposer.sidebarView",
+    "onCommand:commitComposer.autoCompose"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
           "id": "commitComposerContainer",
-          "title": "Git Composer",
+          "title": "OpenGit Composer",
           "icon": "media/icon.svg"
         }
       ]
@@ -33,8 +36,7 @@
         {
           "type": "webview",
           "id": "commitComposer.sidebarView",
-          "name": "Composer Panel",
-          "icon": "$(sparkle)"
+          "name": "Composer Panel"
         }
       ]
     },

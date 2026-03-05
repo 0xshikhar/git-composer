@@ -55,11 +55,22 @@ export class CommitComposerProvider implements vscode.WebviewViewProvider {
             ]
         };
 
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
-        this._setWebviewMessageListener(webviewView.webview);
+        this._view = webviewView;
 
-        // Initial load
-        this.loadChanges();
+        webviewView.onDidChangeVisibility(() => {
+            Logger.info('CommitComposerProvider: Visibility changed', { visible: webviewView.visible });
+            if (webviewView.visible) {
+                void this.loadChanges();
+            }
+        });
+
+        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+        Logger.info('CommitComposerProvider: HTML set');
+
+        this._setWebviewMessageListener(webviewView.webview);
+        if (webviewView.visible) {
+            void this.loadChanges();
+        }
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {

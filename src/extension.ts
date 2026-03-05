@@ -14,15 +14,16 @@ export function activate(context: vscode.ExtensionContext) {
 
     const autoComposeCommand = vscode.commands.registerCommand(
         'commitComposer.autoCompose',
-        () => {
-            vscode.commands.executeCommand('commitComposer.sidebarView.focus');
+        async () => {
+            await vscode.commands.executeCommand('workbench.view.extension.commitComposerContainer');
+            await vscode.commands.executeCommand('commitComposer.sidebarView.focus');
         }
     );
 
     context.subscriptions.push(autoComposeCommand);
-    Logger.info('Git Composer v2 commands registered');
+    Logger.info('OpenGit Composer v2 commands registered');
 }
 
 export function deactivate() {
-    Logger.info('Git Composer v2 extension deactivated');
+    Logger.info('OpenGit Composer v2 extension deactivated');
 }
