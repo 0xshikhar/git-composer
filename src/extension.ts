@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
 import { CommitComposerProvider } from './webview/CommitComposerProvider';
+import { KeyManager } from './core/keyManager';
 import { Logger } from './utils/logger';
 
 export function activate(context: vscode.ExtensionContext) {
     Logger.initialize();
     Logger.info('OpenGit Composer v2 extension activated');
 
-    const provider = new CommitComposerProvider(context.extensionUri);
+    const keyManager = new KeyManager(context);
+    const provider = new CommitComposerProvider(context.extensionUri, keyManager);
 
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(CommitComposerProvider.viewType, provider)
