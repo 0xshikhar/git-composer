@@ -36,7 +36,7 @@ pnpm run test:integration
 
 1. Open VSCode
 2. Go to Extensions (`Cmd+Shift+X`)
-3. Search for "Git Commit Composer" or "0xshikhar"
+3. Search for "OpenGit Composer" or "0xshikhar"
 4. Verify the extension is installed and shows v2.0.0
 
 ### Step 2: Verify Sidebar Appears
@@ -48,7 +48,7 @@ pnpm run test:integration
 > **Note:** If the sidebar icon doesn't appear, try:
 >
 > - Restart VSCode completely (`Cmd+Q` then reopen)
-> - Check the Output panel for errors: `View > Output > Select "Git Commit Composer"` from dropdown
+> - Check the Output panel for errors: `View > Output > Select "OpenGit Composer"` from dropdown
 
 ### Step 3: Test Basic Functionality
 
@@ -77,7 +77,7 @@ Test each configured AI provider:
 Test the command palette commands:
 
 1. `Cmd+Shift+P` → "Commit Composer: Auto Compose"
-2. Verify it opens/focuses the sidebar panel
+2. Verify it opens/focuses the full composer panel and starts composition
 
 ## Common Issues & Fixes
 
@@ -97,7 +97,7 @@ Test the command palette commands:
 
 **Solutions:**
 
-1. Check Output > Git Commit Composer for logs
+1. Check Output > OpenGit Composer for logs
 2. Ensure you have a Git repository open
 3. Run `git status` to confirm you have staged changes
 
