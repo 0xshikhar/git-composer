@@ -42,21 +42,12 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(__webpack_require__(1));
-const gitService_1 = __webpack_require__(2);
-const CommitComposerProvider_1 = __webpack_require__(23);
+const CommitComposerProvider_1 = __webpack_require__(2);
 const logger_1 = __webpack_require__(29);
 function activate(context) {
     logger_1.Logger.initialize();
     logger_1.Logger.info('Git Composer v2 extension activated');
-    let gitService;
-    try {
-        gitService = new gitService_1.GitService();
-    }
-    catch {
-        logger_1.Logger.warn('No workspace folder found — Git Composer will activate when one is opened.');
-        return;
-    }
-    const provider = new CommitComposerProvider_1.CommitComposerProvider(context.extensionUri, gitService);
+    const provider = new CommitComposerProvider_1.CommitComposerProvider(context.extensionUri);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(CommitComposerProvider_1.CommitComposerProvider.viewType, provider));
     const autoComposeCommand = vscode.commands.registerCommand('commitComposer.autoCompose', () => {
         vscode.commands.executeCommand('commitComposer.sidebarView.focus');
@@ -82,13 +73,220 @@ module.exports = require("vscode");
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.CommitComposerProvider = void 0;
+const vscode = __importStar(__webpack_require__(1));
+const gitService_1 = __webpack_require__(3);
+const orchestrator_1 = __webpack_require__(24);
+const commitExecutor_1 = __webpack_require__(28);
+const logger_1 = __webpack_require__(29);
+class CommitComposerProvider {
+    constructor(extensionUri) {
+        this._extensionUri = extensionUri;
+        logger_1.Logger.info('CommitComposerProvider: Initialized');
+    }
+    getOrchestrator() {
+        if (!this._orchestrator) {
+            this._orchestrator = new orchestrator_1.Orchestrator(new gitService_1.GitService());
+        }
+        return this._orchestrator;
+    }
+    getCommitExecutor() {
+        if (!this._commitExecutor) {
+            this._commitExecutor = new commitExecutor_1.CommitExecutor(new gitService_1.GitService());
+        }
+        return this._commitExecutor;
+    }
+    resolveWebviewView(webviewView, _context, _token) {
+        this._view = webviewView;
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [
+                vscode.Uri.joinPath(this._extensionUri, 'dist'),
+                vscode.Uri.joinPath(this._extensionUri, 'media')
+            ]
+        };
+        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+        this._setWebviewMessageListener(webviewView.webview);
+        // Initial load
+        this.loadChanges();
+    }
+    _getHtmlForWebview(webview) {
+        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js'));
+        const nonce = getNonce();
+        return `<!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
+                <title>Git Composer</title>
+            </head>
+            <body>
+                <div id="root"></div>
+                <script nonce="${nonce}" src="${scriptUri}"></script>
+            </body>
+            </html>`;
+    }
+    _setWebviewMessageListener(webview) {
+        webview.onDidReceiveMessage(async (message) => {
+            logger_1.Logger.debug('CommitComposerProvider: Message received', { command: message.command });
+            switch (message.command) {
+                case 'loadData':
+                    await this.loadChanges();
+                    break;
+                case 'compose':
+                    await this.handleCompose(message.providerConfig);
+                    break;
+                case 'commitSingle':
+                    await this.handleCommitSingle(message.draft);
+                    break;
+                case 'commitAll':
+                    await this.handleCommitAll(message.drafts);
+                    break;
+                case 'refresh':
+                    await this.loadChanges();
+                    break;
+            }
+        });
+    }
+    async loadChanges() {
+        if (!this._view)
+            return;
+        try {
+            const staged = await this.getOrchestrator().getStagedChanges();
+            this._view.webview.postMessage({
+                command: 'dataLoaded',
+                data: { staged }
+            });
+        }
+        catch (e) {
+            logger_1.Logger.error('CommitComposerProvider: Failed to load changes', e);
+            this._view.webview.postMessage({
+                command: 'error',
+                message: e.message
+            });
+        }
+    }
+    async handleCompose(providerConfig) {
+        if (!this._view)
+            return;
+        try {
+            this._view.webview.postMessage({ command: 'composing' });
+            const result = await this.getOrchestrator().compose(providerConfig);
+            this._view.webview.postMessage({
+                command: 'composed',
+                drafts: result.drafts,
+                reasoning: result.reasoning
+            });
+        }
+        catch (e) {
+            logger_1.Logger.error('CommitComposerProvider: Compose failed', e);
+            this._view.webview.postMessage({
+                command: 'error',
+                message: e.message
+            });
+        }
+    }
+    async handleCommitSingle(draft) {
+        if (!this._view)
+            return;
+        try {
+            await this.getCommitExecutor().executeSingle(draft);
+            vscode.window.showInformationMessage(`Committed: ${draft.message.split('\n')[0]}`);
+            this._view.webview.postMessage({ command: 'commitSuccess', draftId: draft.id });
+            await this.loadChanges();
+        }
+        catch (e) {
+            logger_1.Logger.error('CommitComposerProvider: Commit failed', e);
+            this._view.webview.postMessage({
+                command: 'error',
+                message: e.message
+            });
+        }
+    }
+    async handleCommitAll(drafts) {
+        if (!this._view)
+            return;
+        try {
+            const results = await this.getCommitExecutor().executeAll(drafts, (progress) => {
+                this._view?.webview.postMessage({
+                    command: 'commitProgress',
+                    progress
+                });
+            });
+            const successCount = results.filter(r => r.success).length;
+            vscode.window.showInformationMessage(`Committed ${successCount}/${results.length} commits successfully.`);
+            await this.loadChanges();
+            this._view.webview.postMessage({ command: 'commitAllDone', results });
+        }
+        catch (e) {
+            logger_1.Logger.error('CommitComposerProvider: Commit all failed', e);
+            this._view.webview.postMessage({
+                command: 'error',
+                message: e.message
+            });
+        }
+    }
+}
+exports.CommitComposerProvider = CommitComposerProvider;
+CommitComposerProvider.viewType = 'commitComposer.sidebarView';
+function getNonce() {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
+}
+
+
+/***/ }),
+/* 3 */
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+"use strict";
+
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.GitService = void 0;
-const simple_git_1 = __importDefault(__webpack_require__(3));
-const git_1 = __webpack_require__(22);
+const simple_git_1 = __importDefault(__webpack_require__(4));
+const git_1 = __webpack_require__(23);
 class GitService {
     constructor(workspacePath) {
         if (workspacePath) {
@@ -222,7 +420,7 @@ exports.GitService = GitService;
 
 
 /***/ }),
-/* 3 */
+/* 4 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
@@ -479,8 +677,8 @@ var import_node_buffer, import_file_exists, NULL, NOOP, objectToString;
 var init_util = __esm({
   "src/lib/utils/util.ts"() {
     "use strict";
-    import_node_buffer = __webpack_require__(4);
-    import_file_exists = __webpack_require__(5);
+    import_node_buffer = __webpack_require__(5);
+    import_file_exists = __webpack_require__(6);
     init_argument_filters();
     NULL = "\0";
     NOOP = () => {
@@ -1589,7 +1787,7 @@ var import_promise_deferred, never;
 var init_completion_detection_plugin = __esm({
   "src/lib/plugins/completion-detection.plugin.ts"() {
     "use strict";
-    import_promise_deferred = __webpack_require__(18);
+    import_promise_deferred = __webpack_require__(19);
     init_utils();
     never = (0, import_promise_deferred.deferred)().promise;
   }
@@ -1685,7 +1883,7 @@ var import_node_events, PluginStore;
 var init_plugin_store = __esm({
   "src/lib/plugins/plugin-store.ts"() {
     "use strict";
-    import_node_events = __webpack_require__(19);
+    import_node_events = __webpack_require__(20);
     init_utils();
     PluginStore = class {
       constructor() {
@@ -1944,7 +2142,7 @@ var import_debug;
 var init_git_logger = __esm({
   "src/lib/git-logger.ts"() {
     "use strict";
-    import_debug = __toESM(__webpack_require__(8));
+    import_debug = __toESM(__webpack_require__(9));
     init_utils();
     import_debug.default.formatters.L = (value) => String(filterHasLength(value) ? value.length : "-");
     import_debug.default.formatters.B = (value) => {
@@ -2053,7 +2251,7 @@ var import_child_process, GitExecutorChain;
 var init_git_executor_chain = __esm({
   "src/lib/runners/git-executor-chain.ts"() {
     "use strict";
-    import_child_process = __webpack_require__(20);
+    import_child_process = __webpack_require__(21);
     init_git_error();
     init_task();
     init_utils();
@@ -3862,7 +4060,7 @@ var init_scheduler = __esm({
   "src/lib/runners/scheduler.ts"() {
     "use strict";
     init_utils();
-    import_promise_deferred2 = __webpack_require__(18);
+    import_promise_deferred2 = __webpack_require__(19);
     init_git_logger();
     createScheduledTask = /* @__PURE__ */ (() => {
       let id = 0;
@@ -4153,7 +4351,7 @@ var import_node_path, parseCheckIgnore;
 var init_CheckIgnore = __esm({
   "src/lib/responses/CheckIgnore.ts"() {
     "use strict";
-    import_node_path = __webpack_require__(21);
+    import_node_path = __webpack_require__(22);
     parseCheckIgnore = (text) => {
       return text.split(/\n/g).map(toPath).filter(Boolean);
     };
@@ -5198,14 +5396,14 @@ module.exports = Object.assign(simpleGit, { gitP: gitP2, simpleGit });
 
 
 /***/ }),
-/* 4 */
+/* 5 */
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("node:buffer");
 
 /***/ }),
-/* 5 */
+/* 6 */
 /***/ ((__unused_webpack_module, exports, __webpack_require__) => {
 
 "use strict";
@@ -5214,11 +5412,11 @@ function __export(m) {
     for (var p in m) if (!exports.hasOwnProperty(p)) exports[p] = m[p];
 }
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-__export(__webpack_require__(6));
+__export(__webpack_require__(7));
 //# sourceMappingURL=index.js.map
 
 /***/ }),
-/* 6 */
+/* 7 */
 /***/ (function(__unused_webpack_module, exports, __webpack_require__) {
 
 "use strict";
@@ -5227,8 +5425,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const fs_1 = __webpack_require__(7);
-const debug_1 = __importDefault(__webpack_require__(8));
+const fs_1 = __webpack_require__(8);
+const debug_1 = __importDefault(__webpack_require__(9));
 const log = debug_1.default('@kwsites/file-exists');
 function check(path, isFile, isDirectory) {
     log(`checking %s`, path);
@@ -5279,14 +5477,14 @@ exports.READABLE = exports.FILE + exports.FOLDER;
 //# sourceMappingURL=index.js.map
 
 /***/ }),
-/* 7 */
+/* 8 */
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("fs");
 
 /***/ }),
-/* 8 */
+/* 9 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 /**
@@ -5295,14 +5493,14 @@ module.exports = require("fs");
  */
 
 if (typeof process === 'undefined' || process.type === 'renderer' || process.browser === true || process.__nwjs) {
-	module.exports = __webpack_require__(9);
+	module.exports = __webpack_require__(10);
 } else {
-	module.exports = __webpack_require__(12);
+	module.exports = __webpack_require__(13);
 }
 
 
 /***/ }),
-/* 9 */
+/* 10 */
 /***/ ((module, exports, __webpack_require__) => {
 
 /* eslint-env browser */
@@ -5562,7 +5760,7 @@ function localstorage() {
 	}
 }
 
-module.exports = __webpack_require__(10)(exports);
+module.exports = __webpack_require__(11)(exports);
 
 const {formatters} = module.exports;
 
@@ -5580,7 +5778,7 @@ formatters.j = function (v) {
 
 
 /***/ }),
-/* 10 */
+/* 11 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 
@@ -5596,7 +5794,7 @@ function setup(env) {
 	createDebug.disable = disable;
 	createDebug.enable = enable;
 	createDebug.enabled = enabled;
-	createDebug.humanize = __webpack_require__(11);
+	createDebug.humanize = __webpack_require__(12);
 	createDebug.destroy = destroy;
 
 	Object.keys(env).forEach(key => {
@@ -5878,7 +6076,7 @@ module.exports = setup;
 
 
 /***/ }),
-/* 11 */
+/* 12 */
 /***/ ((module) => {
 
 /**
@@ -6046,15 +6244,15 @@ function plural(ms, msAbs, n, name) {
 
 
 /***/ }),
-/* 12 */
+/* 13 */
 /***/ ((module, exports, __webpack_require__) => {
 
 /**
  * Module dependencies.
  */
 
-const tty = __webpack_require__(13);
-const util = __webpack_require__(14);
+const tty = __webpack_require__(14);
+const util = __webpack_require__(15);
 
 /**
  * This is the Node.js implementation of `debug()`.
@@ -6080,7 +6278,7 @@ exports.colors = [6, 2, 3, 4, 5, 1];
 try {
 	// Optional dependency (as in, doesn't need to be installed, NOT like optionalDependencies in package.json)
 	// eslint-disable-next-line import/no-extraneous-dependencies
-	const supportsColor = __webpack_require__(15);
+	const supportsColor = __webpack_require__(16);
 
 	if (supportsColor && (supportsColor.stderr || supportsColor).level >= 2) {
 		exports.colors = [
@@ -6288,7 +6486,7 @@ function init(debug) {
 	}
 }
 
-module.exports = __webpack_require__(10)(exports);
+module.exports = __webpack_require__(11)(exports);
 
 const {formatters} = module.exports;
 
@@ -6315,28 +6513,28 @@ formatters.O = function (v) {
 
 
 /***/ }),
-/* 13 */
+/* 14 */
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("tty");
 
 /***/ }),
-/* 14 */
+/* 15 */
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("util");
 
 /***/ }),
-/* 15 */
+/* 16 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
-const os = __webpack_require__(16);
-const tty = __webpack_require__(13);
-const hasFlag = __webpack_require__(17);
+const os = __webpack_require__(17);
+const tty = __webpack_require__(14);
+const hasFlag = __webpack_require__(18);
 
 const {env} = process;
 
@@ -6488,14 +6686,14 @@ module.exports = {
 
 
 /***/ }),
-/* 16 */
+/* 17 */
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("os");
 
 /***/ }),
-/* 17 */
+/* 18 */
 /***/ ((module) => {
 
 "use strict";
@@ -6510,7 +6708,7 @@ module.exports = (flag, argv = process.argv) => {
 
 
 /***/ }),
-/* 18 */
+/* 19 */
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -6575,28 +6773,28 @@ exports["default"] = deferred;
 //# sourceMappingURL=index.js.map
 
 /***/ }),
-/* 19 */
+/* 20 */
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("node:events");
 
 /***/ }),
-/* 20 */
+/* 21 */
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("child_process");
 
 /***/ }),
-/* 21 */
+/* 22 */
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("node:path");
 
 /***/ }),
-/* 22 */
+/* 23 */
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -6612,202 +6810,6 @@ var ChangeType;
     ChangeType["Copied"] = "copied";
     ChangeType["Untracked"] = "untracked";
 })(ChangeType || (exports.ChangeType = ChangeType = {}));
-
-
-/***/ }),
-/* 23 */
-/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.CommitComposerProvider = void 0;
-const vscode = __importStar(__webpack_require__(1));
-const orchestrator_1 = __webpack_require__(24);
-const commitExecutor_1 = __webpack_require__(28);
-const logger_1 = __webpack_require__(29);
-class CommitComposerProvider {
-    constructor(extensionUri, gitService) {
-        this._extensionUri = extensionUri;
-        this.orchestrator = new orchestrator_1.Orchestrator(gitService);
-        this.commitExecutor = new commitExecutor_1.CommitExecutor(gitService);
-        logger_1.Logger.info('CommitComposerProvider: Initialized');
-    }
-    resolveWebviewView(webviewView, _context, _token) {
-        this._view = webviewView;
-        webviewView.webview.options = {
-            enableScripts: true,
-            localResourceRoots: [
-                vscode.Uri.joinPath(this._extensionUri, 'dist'),
-                vscode.Uri.joinPath(this._extensionUri, 'media')
-            ]
-        };
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
-        this._setWebviewMessageListener(webviewView.webview);
-        // Initial load
-        this.loadChanges();
-    }
-    _getHtmlForWebview(webview) {
-        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js'));
-        const nonce = getNonce();
-        return `<!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
-                <title>Git Composer</title>
-            </head>
-            <body>
-                <div id="root"></div>
-                <script nonce="${nonce}" src="${scriptUri}"></script>
-            </body>
-            </html>`;
-    }
-    _setWebviewMessageListener(webview) {
-        webview.onDidReceiveMessage(async (message) => {
-            logger_1.Logger.debug('CommitComposerProvider: Message received', { command: message.command });
-            switch (message.command) {
-                case 'loadData':
-                    await this.loadChanges();
-                    break;
-                case 'compose':
-                    await this.handleCompose(message.providerConfig);
-                    break;
-                case 'commitSingle':
-                    await this.handleCommitSingle(message.draft);
-                    break;
-                case 'commitAll':
-                    await this.handleCommitAll(message.drafts);
-                    break;
-                case 'refresh':
-                    await this.loadChanges();
-                    break;
-            }
-        });
-    }
-    async loadChanges() {
-        if (!this._view)
-            return;
-        try {
-            const staged = await this.orchestrator.getStagedChanges();
-            this._view.webview.postMessage({
-                command: 'dataLoaded',
-                data: { staged }
-            });
-        }
-        catch (e) {
-            logger_1.Logger.error('CommitComposerProvider: Failed to load changes', e);
-            this._view.webview.postMessage({
-                command: 'error',
-                message: e.message
-            });
-        }
-    }
-    async handleCompose(providerConfig) {
-        if (!this._view)
-            return;
-        try {
-            this._view.webview.postMessage({ command: 'composing' });
-            const result = await this.orchestrator.compose(providerConfig);
-            this._view.webview.postMessage({
-                command: 'composed',
-                drafts: result.drafts,
-                reasoning: result.reasoning
-            });
-        }
-        catch (e) {
-            logger_1.Logger.error('CommitComposerProvider: Compose failed', e);
-            this._view.webview.postMessage({
-                command: 'error',
-                message: e.message
-            });
-        }
-    }
-    async handleCommitSingle(draft) {
-        if (!this._view)
-            return;
-        try {
-            await this.commitExecutor.executeSingle(draft);
-            vscode.window.showInformationMessage(`Committed: ${draft.message.split('\n')[0]}`);
-            this._view.webview.postMessage({ command: 'commitSuccess', draftId: draft.id });
-            await this.loadChanges();
-        }
-        catch (e) {
-            logger_1.Logger.error('CommitComposerProvider: Commit failed', e);
-            this._view.webview.postMessage({
-                command: 'error',
-                message: e.message
-            });
-        }
-    }
-    async handleCommitAll(drafts) {
-        if (!this._view)
-            return;
-        try {
-            const results = await this.commitExecutor.executeAll(drafts, (progress) => {
-                this._view?.webview.postMessage({
-                    command: 'commitProgress',
-                    progress
-                });
-            });
-            const successCount = results.filter(r => r.success).length;
-            vscode.window.showInformationMessage(`Committed ${successCount}/${results.length} commits successfully.`);
-            await this.loadChanges();
-            this._view.webview.postMessage({ command: 'commitAllDone', results });
-        }
-        catch (e) {
-            logger_1.Logger.error('CommitComposerProvider: Commit all failed', e);
-            this._view.webview.postMessage({
-                command: 'error',
-                message: e.message
-            });
-        }
-    }
-}
-exports.CommitComposerProvider = CommitComposerProvider;
-CommitComposerProvider.viewType = 'commitComposer.sidebarView';
-function getNonce() {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
-}
 
 
 /***/ }),
@@ -7598,7 +7600,7 @@ const proxyFromEnv = __webpack_require__(91);
 const http = __webpack_require__(37);
 const https = __webpack_require__(38);
 const http2 = __webpack_require__(92);
-const util = __webpack_require__(14);
+const util = __webpack_require__(15);
 const followRedirects = __webpack_require__(93);
 const zlib = __webpack_require__(96);
 const stream = __webpack_require__(35);
@@ -13241,12 +13243,12 @@ module.exports = axios;
 
 
 var CombinedStream = __webpack_require__(34);
-var util = __webpack_require__(14);
+var util = __webpack_require__(15);
 var path = __webpack_require__(27);
 var http = __webpack_require__(37);
 var https = __webpack_require__(38);
 var parseUrl = (__webpack_require__(39).parse);
-var fs = __webpack_require__(7);
+var fs = __webpack_require__(8);
 var Stream = (__webpack_require__(35).Stream);
 var crypto = __webpack_require__(40);
 var mime = __webpack_require__(41);
@@ -13738,7 +13740,7 @@ module.exports = FormData;
 /* 34 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
-var util = __webpack_require__(14);
+var util = __webpack_require__(15);
 var Stream = (__webpack_require__(35).Stream);
 var DelayedStream = __webpack_require__(36);
 
@@ -13960,7 +13962,7 @@ module.exports = require("stream");
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 var Stream = (__webpack_require__(35).Stream);
-var util = __webpack_require__(14);
+var util = __webpack_require__(15);
 
 module.exports = DelayedStream;
 function DelayedStream() {
@@ -16634,7 +16636,7 @@ module.exports = function () {
   if (!debug) {
     try {
       /* eslint global-require: off */
-      debug = __webpack_require__(8)("follow-redirects");
+      debug = __webpack_require__(9)("follow-redirects");
     }
     catch (error) { /* */ }
     if (typeof debug !== "function") {
@@ -17808,7 +17810,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.ConfigLoader = void 0;
-const fs = __importStar(__webpack_require__(7));
+const fs = __importStar(__webpack_require__(8));
 const path = __importStar(__webpack_require__(27));
 const logger_1 = __webpack_require__(29);
 const DEFAULT_CONFIG = {

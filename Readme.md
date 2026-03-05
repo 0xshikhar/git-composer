@@ -1,6 +1,6 @@
 # Git Composer V2
 
-**Git Composer** is a professional-grade VS Code extension that intelligently groups your staged changes into semantic, atomic commits using AI.
+**Git Composer** is a VS Code extension that intelligently groups your staged changes into semantic, atomic commits using AI.
 
 Say goodbye to massive, unstructured commits. Let Git Composer act as your personal AI git assistant right from the VS Code sidebar.
 
